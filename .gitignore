@@ -1,0 +1,28 @@
+*.iml
+.gradle
+/local.properties
+/.idea/caches/build_file_checksums.ser
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+
+# Android / Gradle
+.gradle/
+build/
+local.properties
+.cxx/
+*.apk
+*.aar
+
+# IDE
+.idea/
+*.iml
+
+# App specific
+/app/src/main/assets/ # 必要に応じて
+
+

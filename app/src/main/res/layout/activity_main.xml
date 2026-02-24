@@ -1,23 +1,118 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--res/layout/activity_main.xml-->
-<!--ver 1.00-15-->
+<!--app/src/main/res/layout/activity_main.xml-->
+<!--ver 1.00-21-->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical">
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:background="#EEE">
-        <Button android:id="@+id/btnBack" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="BACK" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#EEE"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btnBack"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="BACK" />
+
+        <Button
+            android:id="@+id/btnPatrol"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="巡回" />
+
+        <Button
+            android:id="@+id/btnRank"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="RANK" />
     </LinearLayout>
-    <WebView android:id="@+id/webView" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" />
-    <com.google.android.material.tabs.TabLayout android:id="@+id/tabLayout" android:layout_width="match_parent" android:layout_height="wrap_content" app:tabMode="fixed" />
-    <FrameLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1">
-        <ScrollView android:id="@+id/layoutLog" android:layout_width="match_parent" android:layout_height="match_parent"><TextView android:id="@+id/tvLog" android:layout_width="match_parent" android:layout_height="wrap_content" android:padding="8dp" android:textColor="#0F0" android:background="#000" android:fontFamily="monospace" /></ScrollView>
-        <ListView android:id="@+id/lvMail" android:layout_width="match_parent" android:layout_height="match_parent" android:visibility="gone" />
-        <ListView android:id="@+id/lvInspect" android:layout_width="match_parent" android:layout_height="match_parent" android:visibility="gone" />
-        <LinearLayout android:id="@+id/layoutConfig" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:visibility="gone" android:padding="8dp">
-            <EditText android:id="@+id/etConfig" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:gravity="top" android:inputType="textMultiLine" android:fontFamily="monospace" />
-            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"><Button android:id="@+id/btnSaveConfig" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="SAVE" /><Button android:id="@+id/btnLoadConfig" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="LOAD" /></LinearLayout>
+
+    <WebView
+        android:id="@+id/webView"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+    <com.google.android.material.tabs.TabLayout
+        android:id="@+id/tabLayout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        app:tabMode="fixed" />
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <ScrollView
+            android:id="@+id/layoutLog"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent">
+
+            <TextView
+                android:id="@+id/tvLog"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="#000"
+                android:clickable="true"
+                android:focusable="true"
+                android:fontFamily="monospace"
+                android:padding="8dp"
+                android:textColor="#0F0" />
+        </ScrollView>
+
+        <ListView
+            android:id="@+id/lvMail"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone" />
+
+        <ListView
+            android:id="@+id/lvInspect"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone" />
+
+        <LinearLayout
+            android:id="@+id/layoutConfig"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:padding="8dp"
+            android:visibility="gone">
+
+            <EditText
+                android:id="@+id/etConfig"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:fontFamily="monospace"
+                android:gravity="top"
+                android:inputType="textMultiLine" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <Button
+                    android:id="@+id/btnSaveConfig"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="SAVE" />
+
+                <Button
+                    android:id="@+id/btnLoadConfig"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="LOAD" />
+            </LinearLayout>
         </LinearLayout>
     </FrameLayout>
 </LinearLayout>

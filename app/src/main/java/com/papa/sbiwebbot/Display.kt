@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/Display.kt
-//ver 1.00-21
+//ver 1.00-25
 package com.papa.sbiwebbot
 import android.animation.ArgbEvaluator
 import android.animation.ValueAnimator
@@ -20,7 +20,7 @@ import java.util.*
 class Display(private val context: Context, private val tvLog: TextView, private val tabLayout: TabLayout) {
     private val handler = Handler(Looper.getMainLooper())
     private val blinkingAnims = mutableMapOf<Int, ValueAnimator>()
-    private val appVersion = "1.00-21"
+    private val appVersion = "1.00-25"
 
     init {
         tvLog.setOnClickListener {
@@ -99,6 +99,15 @@ class Display(private val context: Context, private val tvLog: TextView, private
     fun showActionDialog(el: HtmlElement, onAction: (String) -> Unit) {
         val items = arrayOf("Click", "Input User", "Input Pass")
         AlertDialog.Builder(context).setTitle("${el.tag}: ${el.text}").setItems(items) { _, w -> onAction(items[w]) }.show()
+    }
+
+    fun showErrorPopup(title: String, message: String, onOk: () -> Unit) {
+        AlertDialog.Builder(context)
+            .setTitle(title)
+            .setMessage(message)
+            .setCancelable(false)
+            .setPositiveButton("OK") { _, _ -> onOk() }
+            .show()
     }
 
     fun getVersion() = appVersion

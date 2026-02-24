@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/Mail.kt
-//ver 1.00-21
+//ver 1.00-27
 package com.papa.sbiwebbot
 import org.json.JSONObject
 import java.util.*
@@ -7,7 +7,13 @@ import javax.mail.*
 import javax.mail.internet.MimeMessage
 import javax.mail.internet.MimeUtility
 
-data class EmailItem(val subject: String, val body: String, val date: String)
+data class EmailItem(
+    val subject: String,
+    val body: String,
+    val date: String,
+    val sentTimeMs: Long,
+    val from: String
+)
 
 class Mail {
 
@@ -39,8 +45,10 @@ class Mail {
                     val m = msgs[i] as MimeMessage
                     val subj = MimeUtility.decodeText(m.subject ?: "")
                     val body = extractText(m) // 全文
+                    val sentMs = m.sentDate?.time ?: 0L
                     val date = m.sentDate?.toString() ?: ""
-                    list.add(EmailItem(subj, body, date))
+                    val from = try { MimeUtility.decodeText(m.from?.firstOrNull()?.toString() ?: "") } catch (_: Exception) { "" }
+                    list.add(EmailItem(subj, body, date, sentMs, from))
                 }
 
                 inbox.close(false)
@@ -55,14 +63,39 @@ class Mail {
 
     fun extractUrls(text: String): List<String> {
         // SBIのメール本文URLを想定（https中心）
+        // HTMLエンティティ(&amp;)や折返しを可能な範囲で正規化
+        val normalized = text
+            .replace("&amp;", "&")
+            .replace("&#38;", "&")
+            .replace("\r\n", "\n")
+            .replace("=\n", "") // quoted-printable の改行継続を軽く吸収
+
         val re = Regex("""https?://[^\s<>"']+""")
-        return re.findAll(text)
-            .map { it.value.trim().trimEnd(')', ']', '}', '>', '.', ',', ';', '！', '。') }
+        return re.findAll(normalized)
+            .map {
+                it.value.trim()
+                    .trimEnd(')', ']', '}', '>', '.', ',', ';', '！', '。')
+            }
             .distinct()
             .toList()
     }
 
-    private fun extractText(p: Part): String {
+    
+    fun extractDeviceAuthUrl(text: String): String? {
+        // 仕様: https://m.sbisec.co.jp/deviceAuthentication/input?param1=...&param2=...
+        val normalized = text
+            .replace("&amp;", "&")
+            .replace("&#38;", "&")
+            .replace("\r\n", "\n")
+            .replace("=\n", "")
+
+        val re = Regex("https://m\\.sbisec\\.co\\.jp/deviceAuthentication/input\\?param1=[^\\s<>\"']+?&param2=[^\\s<>\"']+")
+        return re.find(normalized)?.value
+            ?.trim()
+            ?.trimEnd(')', ']', '}', '>', '.', ',', ';', '！', '。')
+    }
+
+private fun extractText(p: Part): String {
         return try {
             when {
                 p.isMimeType("text/*") -> (p.content as? String) ?: ""

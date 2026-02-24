@@ -1,10 +1,71 @@
 //app/src/main/java/com/papa/sbiwebbot/WebScripts.kt
-//ver 1.00-21
+//ver 1.00-26
 package com.papa.sbiwebbot
 
 import org.json.JSONObject
 
 object WebScripts {
+
+    fun autoLoginScript(username: String, password: String): String {
+        val qU = JSONObject.quote(username)
+        val qP = JSONObject.quote(password)
+        return """(function(){
+            try {
+                function setVal(el, v){
+                    try{ el.focus(); }catch(e){}
+                    try{ el.value = v; }catch(e){}
+                    try{ el.dispatchEvent(new Event('input', {bubbles:true})); }catch(e){}
+                    try{ el.dispatchEvent(new Event('change', {bubbles:true})); }catch(e){}
+                }
+                function clickEl(el){
+                    try{ el.scrollIntoView({block:'center'}); }catch(e){}
+                    try{ el.click(); }catch(e){}
+                    try{ el.dispatchEvent(new MouseEvent('click',{view:window,bubbles:true,cancelable:true})); }catch(e){}
+                }
+
+                var u = ${qU};
+                var p = ${qP};
+
+                // user input: try common selectors first
+                var userEl = document.querySelector('input#userId, input[name="userId"], input[name="username"], input[id*="user" i], input[name*="user" i], input[id*="login" i], input[name*="login" i]');
+                if(!userEl){
+                    // fallback: first visible text/email input
+                    var candU = Array.from(document.querySelectorAll('input[type="text"], input[type="email"], input:not([type])'));
+                    userEl = candU.find(function(x){return x && x.offsetParent !== null;}) || null;
+                }
+
+                // pass input
+                var passEl = document.querySelector('input[type="password"], input#password, input[name="password"], input[id*="pass" i], input[name*="pass" i]');
+                if(!passEl){
+                    var candP = Array.from(document.querySelectorAll('input'));
+                    passEl = candP.find(function(x){return (x.type||'').toLowerCase()==='password' && x.offsetParent!==null;}) || null;
+                }
+
+                if(userEl) setVal(userEl, u);
+                if(passEl) setVal(passEl, p);
+
+                // submit button
+                var btn = document.querySelector('#pw-btn, button#pw-btn, input#pw-btn, button[type="submit"], input[type="submit"], button[name="login"], button[id*="login" i], input[id*="login" i]');
+                if(!btn){
+                    // fallback: a/button/input that contains "ログイン"
+                    var all = Array.from(document.querySelectorAll('button,input[type="button"],input[type="submit"],a,[role="button"]'));
+                    btn = all.find(function(e){
+                        var t = (e.innerText || e.value || '').trim();
+                        return t.indexOf('ログイン')>=0;
+                    }) || null;
+                }
+
+                if(btn){
+                    clickEl(btn);
+                    AndroidApp.log('autoLoginScript: clicked');
+                } else {
+                    AndroidApp.log('autoLoginScript: submit button not found');
+                }
+            } catch(e){
+                AndroidApp.log('autoLoginScript exception: ' + e);
+            }
+        })();""".trimIndent()
+    }
 
     fun inspectScript(): String {
         return """(function() {
@@ -229,4 +290,148 @@ object WebScripts {
             }
         })();""".trimIndent()
     }
+
+
+    fun popupAutoCloseScript(): String {
+        // Close common modal/dialog overlays by text and role/class heuristics.
+        return """(function() {
+            try {
+                function txtOf(el){
+                    var t = '';
+                    try { t = (el.innerText || el.value || (el.getAttribute && (el.getAttribute('aria-label') || el.getAttribute('alt'))) || el.title || '').trim(); } catch(e){}
+                    return t;
+                }
+                function tryClick(el){
+                    if(!el) return false;
+                    try { el.scrollIntoView({block:'center'}); } catch(e){}
+                    try { el.click(); return true; } catch(e){}
+                    try {
+                        var ev = new MouseEvent('click', {view: window, bubbles: true, cancelable: true});
+                        el.dispatchEvent(ev);
+                        return true;
+                    } catch(e){}
+                    return false;
+                }
+
+                // 1) role=dialog / aria-modal / obvious modal containers
+                var dialogs = Array.from(document.querySelectorAll('[role="dialog"],[aria-modal="true"],.modal,.Modal,.dialog,.Dialog,#modal,#dialog'));
+                // 2) candidates for close/ok buttons inside dialogs
+                var words = ['閉じる','×','OK','ＯＫ','確認','同意','許可','次へ','続行','了解','キャンセル'];
+                var clicked = false;
+
+                function scan(root){
+                    var nodes = Array.from((root||document).querySelectorAll('button,a,input,[role="button"],[onclick]'));
+                    for (var i=0;i<nodes.length;i++){
+                        var e = nodes[i];
+                        var t = txtOf(e);
+                        if(!t) continue;
+                        for (var j=0;j<words.length;j++){
+                            if (t.indexOf(words[j]) >= 0) {
+                                if (tryClick(e)) return true;
+                            }
+                        }
+                    }
+                    return false;
+                }
+
+                // try within dialogs first
+                for (var d=0; d<dialogs.length && !clicked; d++){
+                    clicked = scan(dialogs[d]);
+                }
+                // fallback: scan whole document (topmost overlays sometimes not marked)
+                if (!clicked) clicked = scan(document);
+
+                AndroidApp.log('popupAutoCloseScript clicked=' + clicked);
+            } catch(e) {
+                AndroidApp.log('popupAutoCloseScript exception: ' + e);
+            }
+        })();""".trimIndent()
+    }
+
+    fun submitDeviceAuthScript(code: String): String {
+        val qCode = JSONObject.quote(code)
+        return """(function() {
+            try {
+                function isVisible(el){
+                    try {
+                        var r = el.getBoundingClientRect();
+                        return r.width > 0 && r.height > 0;
+                    } catch(e){ return true; }
+                }
+
+                function setValue(el, v){
+                    try { el.focus(); } catch(e){}
+                    try { el.value = v; } catch(e){}
+                    try {
+                        el.dispatchEvent(new Event('input', {bubbles:true}));
+                        el.dispatchEvent(new Event('change', {bubbles:true}));
+                    } catch(e){}
+                }
+
+                function txtOf(el){
+                    var t = '';
+                    try { t = (el.innerText || el.value || (el.getAttribute && (el.getAttribute('aria-label') || el.getAttribute('alt'))) || el.title || '').trim(); } catch(e){}
+                    return t;
+                }
+
+                function tryClick(el){
+                    try { el.scrollIntoView({block:'center'}); } catch(e){}
+                    try { el.click(); return true; } catch(e){}
+                    try {
+                        var ev = new MouseEvent('click', {view: window, bubbles: true, cancelable: true});
+                        el.dispatchEvent(ev);
+                        return true;
+                    } catch(e){}
+                    return false;
+                }
+
+                // 1) input探す
+                var inputs = Array.from(document.querySelectorAll('input'))
+                    .filter(function(i){
+                        var t = (i.type || '').toLowerCase();
+                        return (t === '' || t === 'text' || t === 'tel' || t === 'number' || t === 'password') && isVisible(i);
+                    });
+
+                if (inputs.length === 0) {
+                    AndroidApp.onClickResult('device_auth_input', false);
+                    return;
+                }
+
+                setValue(inputs[0], """ + qCode + """);
+                AndroidApp.onClickResult('device_auth_input', true);
+
+                // 2) 認証ボタン探す
+                var needles = ['認証', '送信', '確認', 'OK', '次へ'];
+                var all = Array.from(document.querySelectorAll('button,input,a,[role="button"],[onclick]'));
+                var cand = [];
+                for (var i=0;i<all.length;i++){
+                    var e = all[i];
+                    if (!isVisible(e)) continue;
+                    var t = txtOf(e);
+                    if (!t) continue;
+                    for (var k=0;k<needles.length;k++){
+                        if (t.indexOf(needles[k]) >= 0) { cand.push(e); break; }
+                    }
+                }
+
+                var ok = false;
+                for (var j=0;j<cand.length && j<15;j++){
+                    if (tryClick(cand[j])) { ok = true; break; }
+                }
+
+                if (!ok) {
+                    try {
+                        var f = inputs[0].form;
+                        if (f) { f.submit(); ok = true; }
+                    } catch(e){}
+                }
+
+                AndroidApp.onClickResult('device_auth_submit', ok);
+            } catch(e) {
+                AndroidApp.log('submitDeviceAuthScript exception: ' + e);
+                AndroidApp.onClickResult('device_auth_submit', false);
+            }
+        })();""".trimIndent()
+    }
+
 }

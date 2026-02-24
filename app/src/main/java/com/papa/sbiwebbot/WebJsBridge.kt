@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/WebJsBridge.kt
-//ver 1.00-21
+//ver 1.00-30
 package com.papa.sbiwebbot
 
 import android.webkit.JavascriptInterface
@@ -52,5 +52,6 @@ class WebJsBridge(
     @JavascriptInterface
     fun onClickResult(label: String, ok: Boolean) {
         display.appendLog("ClickTry[$label] => " + (if (ok) "OK" else "NG"))
+        callback()?.onClickResult(label, ok)
     }
 }

@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/MainActivity.kt
-//ver 1.00-41
+//ver 1.00-42
 package com.papa.sbiwebbot
 
 import android.os.Bundle
@@ -259,14 +259,21 @@ class MainActivity : AppCompatActivity() {
 
                     display.appendLog("MAIL: fetched ${list.size}")
 
-                    // デバッグ: 本文に「認証」が含まれるメールから6桁とURLを拾う
-                    val hit = list.firstOrNull { it.body.contains("認証") }
+                    // デバッグ: SBI由来の「認証」メールから6桁とURLを拾う（フィッシング/広告メール対策）
+                    val hit = list.firstOrNull {
+                        (it.from.contains("sbisec", ignoreCase = true) || it.subject.contains("SBI", ignoreCase = true) || it.subject.contains("SBI証券")) &&
+                            (it.subject.contains("認証") || it.body.contains("デバイス認証") || it.body.contains("認証コード"))
+                    }
                     if (hit != null) {
                         val m = Regex("""(?<![0-9A-Za-z_])\d{6}(?![0-9A-Za-z_])""").find(hit.body)?.value
                         if (!m.isNullOrBlank()) display.appendLog("AUTH(MAIL): $m")
                         if (!m.isNullOrBlank()) { lastAuthCode = m }
                         val urls = mail.extractUrls(hit.body)
-                        if (urls.isNotEmpty()) display.appendLog("MAIL: urlHit=" + urls.first())
+                        val safe = urls.firstOrNull {
+                            it.contains("sbisec.co.jp", ignoreCase = true) ||
+                                it.contains("sbisec.akamaized.net", ignoreCase = true)
+                        }
+                        if (!safe.isNullOrBlank()) display.appendLog("MAIL: urlHit=" + safe)
                     }
 
                     mailLoading = false
@@ -297,46 +304,57 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupSplitUi() {
         val prefs = getSharedPreferences("ui", Context.MODE_PRIVATE)
-        splitPercent = prefs.getFloat("splitPercent", 0.58f).coerceIn(0.25f, 0.85f)
+        // 要望: 下パネルをもっと下まで下げたい/小さくしたい
+        splitPercent = prefs.getFloat("splitPercent", 0.58f).coerceIn(0.15f, 0.95f)
         panelCollapsed = prefs.getBoolean("panelCollapsed", false)
 
         fun apply() {
-            val p = if (panelCollapsed) 0.90f else splitPercent
-            guideSplit.setGuidelinePercent(p.coerceIn(0.25f, 0.90f))
+            // collapsed時はほぼ最下段まで（下パネルを最小化）
+            val p = if (panelCollapsed) 0.98f else splitPercent
+            guideSplit.setGuidelinePercent(p.coerceIn(0.15f, 0.98f))
         }
         apply()
 
-        // Drag handle to resize
-        splitHandle.setOnTouchListener { v, ev ->
-            when (ev.actionMasked) {
-                MotionEvent.ACTION_DOWN -> {
-                    v.parent?.requestDisallowInterceptTouchEvent(true)
-                    true
+        fun attachDrag(target: View) {
+            target.setOnTouchListener { v, ev ->
+                when (ev.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        v.parent?.requestDisallowInterceptTouchEvent(true)
+                        true
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        val root = findViewById<View>(R.id.root)
+                        val loc = IntArray(2)
+                        root.getLocationOnScreen(loc)
+                        val rootTop = loc[1]
+                        val h = root.height.takeIf { it > 0 } ?: return@setOnTouchListener true
+                        val y = (ev.rawY - rootTop).coerceIn(0f, h.toFloat())
+
+                        // 仕様: 上:WebView / 下:パネル の比率を変更
+                        val percent = (y / h.toFloat()).coerceIn(0.15f, 0.95f)
+                        splitPercent = percent
+                        panelCollapsed = false
+                        apply()
+                        true
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        prefs.edit()
+                            .putFloat("splitPercent", splitPercent)
+                            .putBoolean("panelCollapsed", panelCollapsed)
+                            .apply()
+                        v.parent?.requestDisallowInterceptTouchEvent(false)
+                        true
+                    }
+                    else -> false
                 }
-                MotionEvent.ACTION_MOVE -> {
-                    val root = findViewById<View>(R.id.root)
-                    val loc = IntArray(2)
-                    root.getLocationOnScreen(loc)
-                    val rootTop = loc[1]
-                    val h = root.height.takeIf { it > 0 } ?: return@setOnTouchListener true
-                    val y = (ev.rawY - rootTop).coerceIn(0f, h.toFloat())
-                    val percent = (y / h.toFloat()).coerceIn(0.25f, 0.85f)
-                    splitPercent = percent
-                    panelCollapsed = false
-                    apply()
-                    true
-                }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    prefs.edit()
-                        .putFloat("splitPercent", splitPercent)
-                        .putBoolean("panelCollapsed", panelCollapsed)
-                        .apply()
-                    v.parent?.requestDisallowInterceptTouchEvent(false)
-                    true
-                }
-                else -> false
             }
         }
+
+        // Drag handle to resize
+        attachDrag(splitHandle)
+
+        // 要望: rec/mailタブ付近からも上下に動かしたい（ハンドルまで指が届かないことがある）
+        attachDrag(findViewById(R.id.tabLayout))
 
         // PANEL button toggles collapse/expand
         findViewById<Button>(R.id.btnPanel).setOnClickListener {

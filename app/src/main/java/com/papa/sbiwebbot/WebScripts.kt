@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/WebScripts.kt
-//ver 1.00-38
+//ver 1.00-39
 package com.papa.sbiwebbot
 
 import org.json.JSONObject
@@ -490,12 +490,12 @@ object WebScripts {
                     if(!t){ try { t = (e.textContent || '').trim(); } catch(ex){} }
                     return norm(t);
                 }
-                function isVisible(e){
+                function isVisible(e, win){
                     try {
                         if(!e) return false;
                         var r = e.getBoundingClientRect();
-                        if(r.width < 8 || r.height < 8) return false;
-                        var cs = window.getComputedStyle(e);
+                        if(r.width < 6 || r.height < 6) return false;
+                        var cs = (win||window).getComputedStyle(e);
                         if(!cs) return false;
                         if(cs.visibility === 'hidden' || cs.display === 'none' || cs.opacity === '0') return false;
                         return true;
@@ -516,13 +516,29 @@ object WebScripts {
                     return false;
                 }
 
-                function findCandidates(){
+                function getAccessibleFrames(){
+                    var frames = [];
+                    var ifs = Array.from(document.querySelectorAll('iframe'));
+                    for(var i=0;i<ifs.length;i++){
+                        var f = ifs[i];
+                        try {
+                            if(!f.contentWindow || !f.contentDocument) continue;
+                            var doc = f.contentDocument;
+                            frames.push({idx:i, iframe:f, win:f.contentWindow, doc:doc});
+                        } catch(e) {
+                        }
+                    }
+                    return frames;
+                }
+
+                function findCandidatesIn(doc, win){
                     var sel = 'button,input[type="button"],input[type="submit"],a,[role="button"],[onclick],label,div,span';
-                    var all = Array.from(document.querySelectorAll(sel));
+                    var all = [];
+                    try { all = Array.from(doc.querySelectorAll(sel)); } catch(e) { all = []; }
                     var cand = [];
                     for(var i=0;i<all.length;i++){
                         var e = all[i];
-                        if(!isVisible(e)) continue;
+                        if(!isVisible(e, win)) continue;
                         var t = labelOf(e);
                         if(!t) continue;
                         for(var k=0;k<keys.length;k++){
@@ -532,7 +548,6 @@ object WebScripts {
                             }
                         }
                     }
-                    // prefer clickable tags first
                     function score(e){
                         var tag = (e.tagName||'').toLowerCase();
                         var s = 0;
@@ -550,9 +565,23 @@ object WebScripts {
                     return cand;
                 }
 
-                function captureRec(){
+                function findCandidates(){
+                    var out = [];
+                    out = out.concat(findCandidatesIn(document, window).map(function(e){ return {el:e, scope:'top'}; }));
+                    var frames = getAccessibleFrames();
+                    for(var i=0;i<frames.length;i++){
+                        var fr = frames[i];
+                        var c = findCandidatesIn(fr.doc, fr.win);
+                        for(var j=0;j<c.length;j++){
+                            out.push({el:c[j], scope:'frame['+fr.idx+']'});
+                        }
+                    }
+                    return out;
+                }
+
+                function captureRec(stage){
                     function getXP(el) {
-                        if (el.id) return 'id("' + el.id + '")';
+                        try { if (el.id) return 'id("' + el.id + '")'; } catch(e){}
                         var path = '';
                         while (el && el.nodeType === 1) {
                             var i = 1, s = el.previousSibling;
@@ -565,34 +594,53 @@ object WebScripts {
                     function txtOf(e){
                         return norm((e.innerText || e.value || (e.getAttribute && (e.getAttribute('aria-label') || e.getAttribute('alt'))) || e.title || e.textContent || ''));
                     }
-                    var tags = ['input','button','a','span','div','img','label','li','td'];
-                    var elements = [];
-                    tags.forEach(function(t){
-                        Array.from(document.getElementsByTagName(t)).forEach(function(e){
+                    function captureFromDoc(doc, scope){
+                        var tags = ['input','button','a','span','div','img','label','li','td'];
+                        var elements = [];
+                        tags.forEach(function(t){
+                            var list = [];
+                            try { list = Array.from(doc.getElementsByTagName(t)); } catch(e) { list = []; }
+                            list.forEach(function(e){
+                                var txt = txtOf(e);
+                                if(txt.length > 0){
+                                    elements.push({tag:t, xpath:(scope+getXP(e)), text:txt.substring(0,30)});
+                                }
+                            });
+                        });
+                        var btns = [];
+                        try { btns = Array.from(doc.querySelectorAll('[role="button"],[onclick]')); } catch(e) { btns = []; }
+                        btns.forEach(function(e){
                             var txt = txtOf(e);
-                            if(txt.length > 0){
-                                elements.push({tag:t, xpath:getXP(e), text:txt.substring(0,30)});
+                            if(txt.length>0){
+                                elements.push({tag:(e.tagName||'').toLowerCase(), xpath:(scope+getXP(e)), text:txt.substring(0,30)});
                             }
                         });
-                    });
-                    Array.from(document.querySelectorAll('[role="button"],[onclick]')).forEach(function(e){
-                        var txt = txtOf(e);
-                        if(txt.length>0){
-                            elements.push({tag:(e.tagName||'').toLowerCase(), xpath:getXP(e), text:txt.substring(0,30)});
-                        }
-                    });
-                    AndroidApp.sendRecSnapshot(location.href, document.title, JSON.stringify(elements));
+                        return elements;
+                    }
+
+                    var all = [];
+                    all = all.concat(captureFromDoc(document, 'top::'));
+                    var frames = getAccessibleFrames();
+                    for(var i=0;i<frames.length;i++){
+                        try { all = all.concat(captureFromDoc(frames[i].doc, 'frame['+frames[i].idx+']::')); } catch(e){}
+                    }
+                    var t = document.title || '';
+                    if(stage){ t = t + ' [' + stage + ']'; }
+                    AndroidApp.sendRecSnapshot(location.href, t, JSON.stringify(all));
                 }
 
                 function attempt(n){
+                    if(n===0){
+                        try { captureRec('before'); } catch(e){}
+                    }
                     var cand = findCandidates();
                     AndroidApp.log('deviceAuthPopupProceed: attempt=' + n + ' cand=' + cand.length);
                     var ok = false;
 
-                    for(var i=0;i<cand.length && i<20;i++){
-                        if(tryClick(cand[i])) { ok = true; break; }
-                        // parent fallback
-                        var p = cand[i].parentElement;
+                    for(var i=0;i<cand.length && i<25;i++){
+                        var el = cand[i].el;
+                        if(tryClick(el)) { ok = true; break; }
+                        var p = el.parentElement;
                         for(var j=0;j<4 && p && !ok;j++){
                             if(tryClick(p)) { ok = true; break; }
                             p = p.parentElement;
@@ -602,8 +650,7 @@ object WebScripts {
 
                     if(ok){
                         AndroidApp.onClickResult(label, true);
-                        // clickの結果DOMが変わるので少し待ってからREC採取
-                        setTimeout(function(){ captureRec(); }, 700);
+                        setTimeout(function(){ try { captureRec('after'); } catch(e){} }, 700);
                         return;
                     }
 
@@ -611,8 +658,7 @@ object WebScripts {
                         setTimeout(function(){ attempt(n+1); }, 350);
                     } else {
                         AndroidApp.onClickResult(label, false);
-                        // 失敗しても現状のRECを採取しておく
-                        try { captureRec(); } catch(e){}
+                        try { captureRec('failed'); } catch(e){}
                     }
                 }
 

@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/Web.kt
-//ver 1.00-38
+//ver 1.00-40
 package com.papa.sbiwebbot
 
 import android.content.Context
@@ -124,7 +124,29 @@ class Web(private val webView: WebView, private val display: Display) {
             "(function(){" +
                 "var el=document.evaluate('$xpath',document,null,9,null).singleNodeValue;" +
                 "if(!el){AndroidApp.log('executeAction: element not found'); return;}" +
-                "if('$action'==='click'){try{el.focus();}catch(e){} try{el.scrollIntoView({block:'center'});}catch(e){} try{el.click();}catch(e){} try{var ev1=new MouseEvent('mousedown',{view:window,bubbles:true,cancelable:true});el.dispatchEvent(ev1);}catch(e){} try{var ev2=new MouseEvent('mouseup',{view:window,bubbles:true,cancelable:true});el.dispatchEvent(ev2);}catch(e){} try{var ev3=new MouseEvent('click',{view:window,bubbles:true,cancelable:true});el.dispatchEvent(ev3);}catch(e){} try{var tev1=new TouchEvent('touchstart',{bubbles:true,cancelable:true});el.dispatchEvent(tev1);}catch(e){} try{var tev2=new TouchEvent('touchend',{bubbles:true,cancelable:true});el.dispatchEvent(tev2);}catch(e){} } else {try{el.focus();}catch(e){} el.value='$value';}" +
+                "if('$action'==='click'){" +
+                    // クリックが効かないケース対策: center座標を使って elementFromPoint にもイベントを投げる
+                    "try{el.focus();}catch(e){}" +
+                    "try{el.scrollIntoView({block:'center'});}catch(e){}" +
+                    "var r=null; try{r=el.getBoundingClientRect();}catch(e){}" +
+                    "var cx=null,cy=null; if(r){cx=r.left+r.width/2; cy=r.top+r.height/2;}" +
+                    "var tgt=null; try{ if(cx!=null && cy!=null){tgt=document.elementFromPoint(cx,cy);} }catch(e){}" +
+                    "function fire(t, type){" +
+                        "try{var ev=new MouseEvent(type,{view:window,bubbles:true,cancelable:true,clientX:cx||0,clientY:cy||0});t.dispatchEvent(ev);}catch(e){}" +
+                        "try{var pev=new PointerEvent(type.replace('mouse','pointer'),{bubbles:true,cancelable:true,clientX:cx||0,clientY:cy||0,pointerType:'touch'});t.dispatchEvent(pev);}catch(e){}" +
+                    "}" +
+                    "try{el.click();}catch(e){}" +
+                    "var base=(tgt||el);" +
+                    "fire(base,'mousedown'); fire(base,'mouseup'); fire(base,'click');" +
+                    // aタグで遷移しない場合の保険
+                    "try{ if(base.tagName && base.tagName.toLowerCase()==='a'){ var href=base.getAttribute('href'); if(href && href!=='#' && href.indexOf('javascript:')!==0){ location.href=href; } } }catch(e){}" +
+                "} else {" +
+                    "try{el.focus();}catch(e){}" +
+                    "try{el.value='';}catch(e){}" +
+                    "try{el.value='$value';}catch(e){}" +
+                    "try{var ev=new Event('input',{bubbles:true});el.dispatchEvent(ev);}catch(e){}" +
+                    "try{var ev2=new Event('change',{bubbles:true});el.dispatchEvent(ev2);}catch(e){}" +
+                "}" +
             "})();"
         webView.evaluateJavascript(js, null)
     }

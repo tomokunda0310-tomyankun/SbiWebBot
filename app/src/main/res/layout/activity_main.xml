@@ -1,17 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--app/src/main/res/layout/activity_main.xml-->
-<!--ver 1.00-21-->
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!--ver 1.00-41-->
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/root"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:orientation="vertical">
+    android:layout_height="match_parent">
 
+    <!-- Top buttons -->
     <LinearLayout
-        android:layout_width="match_parent"
+        android:id="@+id/topBar"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:background="#EEE"
-        android:orientation="horizontal">
+        android:orientation="horizontal"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
 
         <Button
             android:id="@+id/btnBack"
@@ -30,89 +35,144 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="RANK" />
+
+        <Button
+            android:id="@+id/btnPanel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="PANEL" />
     </LinearLayout>
+
+    <!-- Split position (drag handle moves this) -->
+    <androidx.constraintlayout.widget.Guideline
+        android:id="@+id/guideSplit"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        app:layout_constraintGuide_percent="0.58" />
 
     <WebView
         android:id="@+id/webView"
-        android:layout_width="match_parent"
+        android:layout_width="0dp"
         android:layout_height="0dp"
-        android:layout_weight="1" />
+        app:layout_constraintTop_toBottomOf="@id/topBar"
+        app:layout_constraintBottom_toTopOf="@id/splitHandle"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
 
-    <com.google.android.material.tabs.TabLayout
-        android:id="@+id/tabLayout"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        app:tabMode="fixed" />
+    <!-- Drag handle -->
+    <LinearLayout
+        android:id="@+id/splitHandle"
+        android:layout_width="0dp"
+        android:layout_height="18dp"
+        android:background="#DDDDDD"
+        android:gravity="center"
+        android:orientation="vertical"
+        app:layout_constraintTop_toTopOf="@id/guideSplit"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
 
-    <FrameLayout
-        android:layout_width="match_parent"
+        <View
+            android:layout_width="48dp"
+            android:layout_height="4dp"
+            android:background="#888888" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="drag"
+            android:textSize="10sp" />
+    </LinearLayout>
+
+    <!-- Bottom panel (tabs + content). Height is adjustable by dragging the handle -->
+    <LinearLayout
+        android:id="@+id/panel"
+        android:layout_width="0dp"
         android:layout_height="0dp"
-        android:layout_weight="1">
+        android:orientation="vertical"
+        app:layout_constraintTop_toBottomOf="@id/splitHandle"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
 
-        <ScrollView
-            android:id="@+id/layoutLog"
+        <com.google.android.material.tabs.TabLayout
+            android:id="@+id/tabLayout"
             android:layout_width="match_parent"
-            android:layout_height="match_parent">
+            android:layout_height="wrap_content"
+            app:tabMode="fixed" />
 
-            <TextView
-                android:id="@+id/tvLog"
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1">
+
+            <ScrollView
+                android:id="@+id/layoutLog"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:background="#000"
-                android:clickable="true"
-                android:focusable="true"
-                android:fontFamily="monospace"
-                android:padding="8dp"
-                android:textColor="#0F0" />
-        </ScrollView>
+                android:layout_height="match_parent">
 
-        <ListView
-            android:id="@+id/lvMail"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:visibility="gone" />
+                <TextView
+                    android:id="@+id/tvLog"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:background="#000"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:fontFamily="monospace"
+                    android:padding="8dp"
+                    android:textColor="#0F0" />
+            </ScrollView>
 
-        <ListView
-            android:id="@+id/lvInspect"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:visibility="gone" />
-
-        <LinearLayout
-            android:id="@+id/layoutConfig"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:orientation="vertical"
-            android:padding="8dp"
-            android:visibility="gone">
-
-            <EditText
-                android:id="@+id/etConfig"
+            <ListView
+                android:id="@+id/lvMail"
                 android:layout_width="match_parent"
-                android:layout_height="0dp"
-                android:layout_weight="1"
-                android:fontFamily="monospace"
-                android:gravity="top"
-                android:inputType="textMultiLine" />
+                android:layout_height="match_parent"
+                android:visibility="gone" />
+
+            <ListView
+                android:id="@+id/lvInspect"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:visibility="gone" />
 
             <LinearLayout
+                android:id="@+id/layoutConfig"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content">
+                android:layout_height="match_parent"
+                android:orientation="vertical"
+                android:padding="8dp"
+                android:visibility="gone">
 
-                <Button
-                    android:id="@+id/btnSaveConfig"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
+                <EditText
+                    android:id="@+id/etConfig"
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
                     android:layout_weight="1"
-                    android:text="SAVE" />
+                    android:fontFamily="monospace"
+                    android:gravity="top"
+                    android:inputType="textMultiLine" />
 
-                <Button
-                    android:id="@+id/btnLoadConfig"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="LOAD" />
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content">
+
+                    <Button
+                        android:id="@+id/btnSaveConfig"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="SAVE" />
+
+                    <Button
+                        android:id="@+id/btnLoadConfig"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="LOAD" />
+                </LinearLayout>
             </LinearLayout>
-        </LinearLayout>
-    </FrameLayout>
-</LinearLayout>
+        </FrameLayout>
+
+    </LinearLayout>
+
+</androidx.constraintlayout.widget.ConstraintLayout>

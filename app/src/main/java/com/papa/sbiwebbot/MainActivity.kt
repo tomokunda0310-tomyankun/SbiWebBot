@@ -1,13 +1,16 @@
 //app/src/main/java/com/papa/sbiwebbot/MainActivity.kt
-//ver 1.00-30
+//ver 1.00-41
 package com.papa.sbiwebbot
 
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.content.Context
 import android.view.View
+import android.view.MotionEvent
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
+import androidx.constraintlayout.widget.Guideline
 import com.google.android.material.tabs.TabLayout
 import org.json.JSONObject
 
@@ -21,6 +24,13 @@ class MainActivity : AppCompatActivity() {
     private lateinit var lvInspect: ListView
     private lateinit var lvMail: ListView
     private lateinit var tabLayout: TabLayout
+
+    // Split UI
+    private lateinit var guideSplit: Guideline
+    private lateinit var splitHandle: View
+    private lateinit var panel: View
+    private var panelCollapsed: Boolean = false
+    private var splitPercent: Float = 0.58f
 
     private val inspectedElements = mutableListOf<HtmlElement>()
     private val mailItems = mutableListOf<EmailItem>()
@@ -52,6 +62,12 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        // Split UI (draggable divider)
+        guideSplit = findViewById(R.id.guideSplit)
+        splitHandle = findViewById(R.id.splitHandle)
+        panel = findViewById(R.id.panel)
+        setupSplitUi()
+
         tabLayout = findViewById(R.id.tabLayout)
         display = Display(this, findViewById(R.id.tvLog), tabLayout)
 
@@ -78,12 +94,14 @@ class MainActivity : AppCompatActivity() {
 
             override fun onElementsInspected(list: List<HtmlElement>) {
                 runOnUiThread {
+                    // 要望: RECは「認証」関連だけ表示（他の文字が多すぎるため）
+                    val filtered = list.filter { it.text.contains("認証") }
                     inspectedElements.clear()
-                    inspectedElements.addAll(list)
+                    inspectedElements.addAll(filtered)
                     lvInspect.adapter = ArrayAdapter(
                         this@MainActivity,
                         android.R.layout.simple_list_item_1,
-                        list.map { "[${it.tag}] ${it.text}" }
+                        filtered.map { "[${it.tag}] ${it.text}" }
                     )
                 }
             }
@@ -120,21 +138,23 @@ class MainActivity : AppCompatActivity() {
         lvInspect.setOnItemClickListener { _, _, p, _ ->
             if (webLoading) return@setOnItemClickListener
             val el = inspectedElements[p]
-            display.showActionDialog(el) { action ->
-                try {
-                    val creds = JSONObject(etConfig.text.toString()).getJSONObject("sbi_credentials")
-                    when (action) {
-                        "Click" -> {
-                            web.executeAction(el.xpath, "click")
-                            display.appendLog("CLICK -> ${el.xpath}")
-                        }
-                        "Input User" -> web.executeAction(el.xpath, "input", creds.getString("username"))
-                        "Input Pass" -> web.executeAction(el.xpath, "input", creds.getString("password"))
-                    }
-                } catch (e: Exception) {
-                    display.appendLog("Action Fail: ${e.message}")
+
+            // 要望: RECポップアップにテンキー + BACK。User/Pass自動入力は廃止。
+            display.showRecPopup(
+                el = el,
+                initialText = "",
+                onTap = {
+                    web.executeAction(el.xpath, "click")
+                    display.appendLog("CLICK -> ${el.xpath}")
+                },
+                onInput = { v ->
+                    web.executeAction(el.xpath, "input", v)
+                },
+                onBack = {
+                    web.goBack()
+                    display.appendLog("WEB: back")
                 }
-            }
+            )
         }
 
         lvMail.setOnItemClickListener { _, _, p, _ ->
@@ -244,6 +264,7 @@ class MainActivity : AppCompatActivity() {
                     if (hit != null) {
                         val m = Regex("""(?<![0-9A-Za-z_])\d{6}(?![0-9A-Za-z_])""").find(hit.body)?.value
                         if (!m.isNullOrBlank()) display.appendLog("AUTH(MAIL): $m")
+                        if (!m.isNullOrBlank()) { lastAuthCode = m }
                         val urls = mail.extractUrls(hit.body)
                         if (urls.isNotEmpty()) display.appendLog("MAIL: urlHit=" + urls.first())
                     }
@@ -270,6 +291,58 @@ class MainActivity : AppCompatActivity() {
                     display.setTabState(1, false, "#FFCCCC")
                 }
             }
+        }
+    }
+
+
+    private fun setupSplitUi() {
+        val prefs = getSharedPreferences("ui", Context.MODE_PRIVATE)
+        splitPercent = prefs.getFloat("splitPercent", 0.58f).coerceIn(0.25f, 0.85f)
+        panelCollapsed = prefs.getBoolean("panelCollapsed", false)
+
+        fun apply() {
+            val p = if (panelCollapsed) 0.90f else splitPercent
+            guideSplit.setGuidelinePercent(p.coerceIn(0.25f, 0.90f))
+        }
+        apply()
+
+        // Drag handle to resize
+        splitHandle.setOnTouchListener { v, ev ->
+            when (ev.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    v.parent?.requestDisallowInterceptTouchEvent(true)
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val root = findViewById<View>(R.id.root)
+                    val loc = IntArray(2)
+                    root.getLocationOnScreen(loc)
+                    val rootTop = loc[1]
+                    val h = root.height.takeIf { it > 0 } ?: return@setOnTouchListener true
+                    val y = (ev.rawY - rootTop).coerceIn(0f, h.toFloat())
+                    val percent = (y / h.toFloat()).coerceIn(0.25f, 0.85f)
+                    splitPercent = percent
+                    panelCollapsed = false
+                    apply()
+                    true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    prefs.edit()
+                        .putFloat("splitPercent", splitPercent)
+                        .putBoolean("panelCollapsed", panelCollapsed)
+                        .apply()
+                    v.parent?.requestDisallowInterceptTouchEvent(false)
+                    true
+                }
+                else -> false
+            }
+        }
+
+        // PANEL button toggles collapse/expand
+        findViewById<Button>(R.id.btnPanel).setOnClickListener {
+            panelCollapsed = !panelCollapsed
+            apply()
+            prefs.edit().putBoolean("panelCollapsed", panelCollapsed).apply()
         }
     }
 
@@ -470,6 +543,15 @@ class MainActivity : AppCompatActivity() {
 
             // 仕様: 送信ボタン押下時刻以降のみ
             if (minSentMs > 0 && m.sentTimeMs > 0 && m.sentTimeMs < minSentMs) continue
+
+            // AUTH CODE: 同一メール内の6桁コードを拾う（未設定なら保持）
+            if (lastAuthCode.isNullOrBlank()) {
+                val code = Regex("""(?<![0-9A-Za-z_])\d{6}(?![0-9A-Za-z_])""").find(m.body)?.value
+                if (!code.isNullOrBlank()) {
+                    lastAuthCode = code
+                    display.appendLog("AUTH(MAIL): $code")
+                }
+            }
 
             val urls = mail.extractUrls(m.body)
             val hit = urls.firstOrNull {

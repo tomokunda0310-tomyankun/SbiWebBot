@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/Display.kt
-//ver 1.00-25
+//ver 1.00-41
 package com.papa.sbiwebbot
 import android.animation.ArgbEvaluator
 import android.animation.ValueAnimator
@@ -9,6 +9,10 @@ import android.os.Handler
 import android.os.Looper
 import android.text.method.ScrollingMovementMethod
 import android.view.ViewGroup
+import android.widget.Button
+import android.widget.EditText
+import android.widget.GridLayout
+import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
@@ -20,7 +24,7 @@ import java.util.*
 class Display(private val context: Context, private val tvLog: TextView, private val tabLayout: TabLayout) {
     private val handler = Handler(Looper.getMainLooper())
     private val blinkingAnims = mutableMapOf<Int, ValueAnimator>()
-    private val appVersion = "1.00-25"
+    private val appVersion = "1.00-41"
 
     init {
         tvLog.setOnClickListener {
@@ -96,9 +100,102 @@ class Display(private val context: Context, private val tvLog: TextView, private
             .show()
     }
 
-    fun showActionDialog(el: HtmlElement, onAction: (String) -> Unit) {
-        val items = arrayOf("Click", "Input User", "Input Pass")
-        AlertDialog.Builder(context).setTitle("${el.tag}: ${el.text}").setItems(items) { _, w -> onAction(items[w]) }.show()
+    /**
+     * REC用ポップアップ
+     * - Tap(Click)
+     * - TenKey入力 (0-9 / BS / CLR / OK)
+     * - Back(WebView.goBack)
+     */
+    fun showRecPopup(
+        el: HtmlElement,
+        initialText: String = "",
+        onTap: () -> Unit,
+        onInput: (String) -> Unit,
+        onBack: () -> Unit,
+    ) {
+        val box = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(24, 16, 24, 16)
+        }
+
+        val tvTitle = TextView(context).apply {
+            text = "[${el.tag}] ${el.text}\n${el.xpath}"
+            setTextIsSelectable(true)
+        }
+        box.addView(tvTitle)
+
+        val et = EditText(context).apply {
+            setText(initialText)
+            setSelection(text.length)
+        }
+        box.addView(et)
+
+        val btnRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+        val btnTap = Button(context).apply {
+            text = "TAP"
+            setOnClickListener { onTap() }
+        }
+        val btnBack = Button(context).apply {
+            text = "BACK"
+            setOnClickListener { onBack() }
+        }
+        val btnOk = Button(context).apply {
+            text = "OK"
+            setOnClickListener { onInput(et.text?.toString() ?: "") }
+        }
+        btnRow.addView(btnTap, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        btnRow.addView(btnBack, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        btnRow.addView(btnOk, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        box.addView(btnRow)
+
+        val grid = GridLayout(context).apply {
+            columnCount = 3
+            rowCount = 4
+            setPadding(0, 16, 0, 0)
+        }
+
+        fun addKey(label: String, onKey: () -> Unit) {
+            val b = Button(context).apply {
+                text = label
+                setOnClickListener { onKey() }
+            }
+            grid.addView(
+                b,
+                ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            )
+        }
+
+        listOf("1","2","3","4","5","6","7","8","9").forEach { d ->
+            addKey(d) {
+                et.append(d)
+                onInput(et.text?.toString() ?: "")
+            }
+        }
+        addKey("CLR") {
+            et.setText("")
+            onInput("")
+        }
+        addKey("0") {
+            et.append("0")
+            onInput(et.text?.toString() ?: "")
+        }
+        addKey("BS") {
+            val s = et.text?.toString() ?: ""
+            if (s.isNotEmpty()) {
+                et.setText(s.dropLast(1))
+                et.setSelection(et.text.length)
+                onInput(et.text?.toString() ?: "")
+            }
+        }
+        box.addView(grid)
+
+        AlertDialog.Builder(context)
+            .setTitle("REC")
+            .setView(box)
+            .setPositiveButton("CLOSE", null)
+            .show()
     }
 
     fun showErrorPopup(title: String, message: String, onOk: () -> Unit) {

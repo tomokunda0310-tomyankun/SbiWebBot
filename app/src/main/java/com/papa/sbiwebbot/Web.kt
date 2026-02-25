@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/Web.kt
-//ver 1.00-40
+//ver 1.00-43
 package com.papa.sbiwebbot
 
 import android.content.Context
@@ -97,7 +97,10 @@ class Web(private val webView: WebView, private val display: Display) {
                     webView.loadUrl("https://login.sbisec.co.jp/login/entry?cccid=main-site-user")
                 }
 
-                webView.evaluateJavascript(WebScripts.popupAutoCloseScript(), null)
+                // 安全策: SBI以外では自動クリック/自動クローズを実行しない
+                if (isSbiDomain(url)) {
+                    webView.evaluateJavascript(WebScripts.popupAutoCloseScript(), null)
+                }
 
                 // デバイス認証URL(メールから開いたサイト)のフィッシング注意ポップアップを閉じる
                 if (url != null && url.contains("/deviceAuthentication/input", ignoreCase = true)) {
@@ -119,12 +122,30 @@ class Web(private val webView: WebView, private val display: Display) {
     fun goBack() { if (webView.canGoBack()) webView.goBack() }
     fun getCurrentUrl(): String? = currentUrl
 
+    private fun isSbiDomain(url: String?): Boolean {
+        val u = (url ?: "").lowercase()
+        return u.contains("sbisec.co.jp") ||
+            u.contains("login.sbisec.co.jp") ||
+            u.contains("m.sbisec.co.jp") ||
+            u.contains("sbisec.akamaized.net")
+    }
+
     fun executeAction(xpath: String, action: String, value: String = "") {
         val js =
             "(function(){" +
                 "var el=document.evaluate('$xpath',document,null,9,null).singleNodeValue;" +
                 "if(!el){AndroidApp.log('executeAction: element not found'); return;}" +
                 "if('$action'==='click'){" +
+                    // 外部リンク誤タップ防止（SBIドメイン以外はブロック）
+                    "try{" +
+                        "var tag=(el.tagName||'').toLowerCase();" +
+                        "var href='';" +
+                        "if(tag==='a' && el.href){href=String(el.href);}" +
+                        "if(href && href.indexOf('http')===0){" +
+                            "var ok=(href.indexOf('sbisec.co.jp')>=0)||(href.indexOf('sbisec.akamaized.net')>=0)||(href.indexOf('login.sbisec.co.jp')>=0)||(href.indexOf('m.sbisec.co.jp')>=0);" +
+                            "if(!ok){AndroidApp.log('executeAction: blocked external link: '+href); return;}" +
+                        "}" +
+                    "}catch(e){}" +
                     // クリックが効かないケース対策: center座標を使って elementFromPoint にもイベントを投げる
                     "try{el.focus();}catch(e){}" +
                     "try{el.scrollIntoView({block:'center'});}catch(e){}" +
@@ -138,8 +159,8 @@ class Web(private val webView: WebView, private val display: Display) {
                     "try{el.click();}catch(e){}" +
                     "var base=(tgt||el);" +
                     "fire(base,'mousedown'); fire(base,'mouseup'); fire(base,'click');" +
-                    // aタグで遷移しない場合の保険
-                    "try{ if(base.tagName && base.tagName.toLowerCase()==='a'){ var href=base.getAttribute('href'); if(href && href!=='#' && href.indexOf('javascript:')!==0){ location.href=href; } } }catch(e){}" +
+                    // aタグで遷移しない場合の保険（SBIドメイン限定）
+                    "try{ if(base.tagName && base.tagName.toLowerCase()==='a'){ var href=base.href||base.getAttribute('href'); href=String(href||''); if(href && href!=='#' && href.indexOf('javascript:')!==0){ var ok=(href.indexOf('sbisec.co.jp')>=0)||(href.indexOf('sbisec.akamaized.net')>=0)||(href.indexOf('login.sbisec.co.jp')>=0)||(href.indexOf('m.sbisec.co.jp')>=0); if(ok){ location.href=href; } else { AndroidApp.log('executeAction: skip navigate external: '+href); } } } }catch(e){}" +
                 "} else {" +
                     "try{el.focus();}catch(e){}" +
                     "try{el.value='';}catch(e){}" +

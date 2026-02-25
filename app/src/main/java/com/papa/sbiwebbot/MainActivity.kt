@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/MainActivity.kt
-//ver 1.00-42
+//ver 1.00-43
 package com.papa.sbiwebbot
 
 import android.os.Bundle
@@ -31,6 +31,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var panel: View
     private var panelCollapsed: Boolean = false
     private var splitPercent: Float = 0.58f
+    private lateinit var seekSplit: SeekBar
 
     private val inspectedElements = mutableListOf<HtmlElement>()
     private val mailItems = mutableListOf<EmailItem>()
@@ -66,6 +67,7 @@ class MainActivity : AppCompatActivity() {
         guideSplit = findViewById(R.id.guideSplit)
         splitHandle = findViewById(R.id.splitHandle)
         panel = findViewById(R.id.panel)
+        seekSplit = findViewById(R.id.seekSplit)
         setupSplitUi()
 
         tabLayout = findViewById(R.id.tabLayout)
@@ -88,7 +90,16 @@ class MainActivity : AppCompatActivity() {
                 runOnUiThread {
                     webLoading = isLoading
                     updateTabVisibility()
-                    if (!isLoading) maybeStartAutoPatrol()
+                    if (!isLoading) {
+                        // 勝手に外部サイトへ飛ぶ事故対策: AUTO中にSBI以外へ遷移したら停止してTOPへ戻す
+                        if (autoRunning && !isSbiDomain(url)) {
+                            display.appendLog("AUTO: blocked external navigation -> back to SBI TOP")
+                            stopAuto("external navigation blocked")
+                            web.loadUrl("https://www.sbisec.co.jp/ETGate/")
+                            return@runOnUiThread
+                        }
+                        maybeStartAutoPatrol()
+                    }
                 }
             }
 
@@ -312,8 +323,32 @@ class MainActivity : AppCompatActivity() {
             // collapsed時はほぼ最下段まで（下パネルを最小化）
             val p = if (panelCollapsed) 0.98f else splitPercent
             guideSplit.setGuidelinePercent(p.coerceIn(0.15f, 0.98f))
+
+            // Slider sync (0..100 -> 0.15..0.95)
+            val prog = (((splitPercent - 0.15f) / (0.95f - 0.15f)) * 100f).toInt().coerceIn(0, 100)
+            if (!seekSplit.isPressed) {
+                seekSplit.progress = prog
+            }
         }
         apply()
+
+        // Slider to resize
+        seekSplit.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (!fromUser) return
+                val percent = 0.15f + (progress / 100f) * (0.95f - 0.15f)
+                splitPercent = percent.coerceIn(0.15f, 0.95f)
+                panelCollapsed = false
+                apply()
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                prefs.edit()
+                    .putFloat("splitPercent", splitPercent)
+                    .putBoolean("panelCollapsed", panelCollapsed)
+                    .apply()
+            }
+        })
 
         fun attachDrag(target: View) {
             target.setOnTouchListener { v, ev ->
@@ -367,19 +402,6 @@ class MainActivity : AppCompatActivity() {
     private fun setupButtons() {
         findViewById<Button>(R.id.btnBack).setOnClickListener { web.goBack() }
 
-        // 巡回: 手動ステップ
-        findViewById<Button>(R.id.btnPatrol).setOnClickListener { doPatrolStep() }
-
-        // 巡回 長押し => AutoLogin（旧SAVE長押し移植）
-        findViewById<Button>(R.id.btnPatrol).setOnLongClickListener {
-            display.appendLog("PATROL(LONG): autoLogin")
-            web.autoLogin(etConfig.text.toString())
-            true
-        }
-
-        // RANK: ランキング抽出入口
-        findViewById<Button>(R.id.btnRank).setOnClickListener { web.extractRanking() }
-
         findViewById<Button>(R.id.btnSaveConfig).setOnClickListener {
             config.saveEncrypted(etConfig.text.toString())
         }
@@ -387,38 +409,6 @@ class MainActivity : AppCompatActivity() {
             etConfig.setText(config.loadDecrypted() ?: "")
             if (!etConfig.text.isNullOrBlank()) {
                 fetchMail(isAuto = true)
-            }
-        }
-    }
-
-    private fun doPatrolStep() {
-        val url = web.getCurrentUrl() ?: ""
-
-        // 画面遷移でOTP送信状態をリセット
-        if (!url.contains("/otp/", ignoreCase = true)) {
-            otpClickInFlight = false
-            otpClickOk = false
-            otpClickMs = 0L
-        }
-        display.appendLog("PATROL: url=$url")
-
-        when {
-            url.contains("/login/entry") || url.contains("login.sbisec.co.jp/login/") -> {
-                display.appendLog("PATROL: autoLogin")
-                web.autoLogin(etConfig.text.toString())
-            }
-
-            url.contains("/otp/entry") || url.contains("/otp/confirm") -> {
-                display.appendLog("PATROL: click 'Eメールを送信する' then poll SBI mail")
-                otpClickInFlight = true
-                otpClickOk = false
-                otpClickMs = System.currentTimeMillis()
-                web.sendOtpEmail()
-                // ポーリング開始は onClickResult(OK) で行う
-            }
-
-            else -> {
-                display.appendLog("PATROL: no rule (manual)")
             }
         }
     }
@@ -578,6 +568,11 @@ class MainActivity : AppCompatActivity() {
             if (hit != null) return hit
         }
         return null
+    }
+
+    private fun isSbiDomain(url: String?): Boolean {
+        val u = (url ?: "").lowercase()
+        return u.contains("sbisec.co.jp") || u.contains("login.sbisec.co.jp") || u.contains("m.sbisec.co.jp")
     }
 
     private fun stopAuto(reason: String) {

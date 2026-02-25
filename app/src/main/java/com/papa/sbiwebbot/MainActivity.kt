@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/MainActivity.kt
-//ver 1.00-43
+//ver 1.00-44
 package com.papa.sbiwebbot
 
 import android.os.Bundle
@@ -19,6 +19,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var config: Config
     private lateinit var web: Web
     private lateinit var mail: Mail
+    private lateinit var cookieStore: CookieStore
 
     private lateinit var etConfig: EditText
     private lateinit var lvInspect: ListView
@@ -59,6 +60,10 @@ class MainActivity : AppCompatActivity() {
     private var otpClickMs: Long = 0L
     private var otpClickOk: Boolean = false
 
+    // autoLogin連打防止（遅い/エラー対策）
+    private var lastAutoLoginAt: Long = 0L
+    private var lastAutoLoginUrl: String = ""
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -76,6 +81,10 @@ class MainActivity : AppCompatActivity() {
         config = Config(this)
         mail = Mail()
         web = Web(findViewById(R.id.webView), display)
+        cookieStore = CookieStore(this)
+
+        // Cookie復元（アプリ更新後も引き継ぐ）
+        cookieStore.restore()
 
         etConfig = findViewById(R.id.etConfig)
         lvInspect = findViewById(R.id.lvInspect)
@@ -91,6 +100,11 @@ class MainActivity : AppCompatActivity() {
                     webLoading = isLoading
                     updateTabVisibility()
                     if (!isLoading) {
+                        // Cookie自動保存（SBIドメインのみ）
+                        if (isSbiDomain(url)) {
+                            cookieStore.maybeSaveDebounced()
+                        }
+
                         // 勝手に外部サイトへ飛ぶ事故対策: AUTO中にSBI以外へ遷移したら停止してTOPへ戻す
                         if (autoRunning && !isSbiDomain(url)) {
                             display.appendLog("AUTO: blocked external navigation -> back to SBI TOP")
@@ -196,6 +210,12 @@ class MainActivity : AppCompatActivity() {
         if (!etConfig.text.isNullOrBlank()) {
             fetchMail(isAuto = true)
         }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        // Cookie自動保存（configのように）
+        cookieStore.saveNow()
     }
 
     private fun setupTabs(tl: TabLayout) {
@@ -439,9 +459,17 @@ class MainActivity : AppCompatActivity() {
         val url = web.getCurrentUrl() ?: ""
 
         when {
-            url.contains("/login/entry") || url.contains("login.sbisec.co.jp/login/") -> {
-                display.appendLog("AUTO: autoLogin")
-                web.autoLogin(etConfig.text.toString())
+            url.contains("/login/entry") || url.contains("login.sbisec.co.jp/login/") || url.contains("/idpw/auth") -> {
+                // 連打防止（同一URLで短時間に複数回呼ぶと、入力が遅くなったりエラーになることがある）
+                val now = System.currentTimeMillis()
+                if (url == lastAutoLoginUrl && (now - lastAutoLoginAt) < 2500) {
+                    // skip
+                } else {
+                    lastAutoLoginUrl = url
+                    lastAutoLoginAt = now
+                    display.appendLog("AUTO: autoLogin")
+                    web.autoLogin(etConfig.text.toString())
+                }
             }
 
             // OTP送信は /otp/entry で「1回だけ」
@@ -482,7 +510,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        handler.postDelayed({ autoTick() }, 900)
+        handler.postDelayed({ autoTick() }, 600)
     }
 
     private fun startMailPolling() {

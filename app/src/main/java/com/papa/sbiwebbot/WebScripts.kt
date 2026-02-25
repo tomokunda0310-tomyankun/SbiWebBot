@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/WebScripts.kt
-//ver 1.00-39
+//ver 1.00-44
 package com.papa.sbiwebbot
 
 import org.json.JSONObject
@@ -11,6 +11,9 @@ object WebScripts {
         val qP = JSONObject.quote(password)
         return """(function(){
             try {
+                var u = ${qU};
+                var p = ${qP};
+
                 function setVal(el, v){
                     try{ el.focus(); }catch(e){}
                     try{ el.value = v; }catch(e){}
@@ -23,44 +26,61 @@ object WebScripts {
                     try{ el.dispatchEvent(new MouseEvent('click',{view:window,bubbles:true,cancelable:true})); }catch(e){}
                 }
 
-                var u = ${qU};
-                var p = ${qP};
-
-                // user input: try common selectors first
-                var userEl = document.querySelector('input#userId, input[name="userId"], input[name="username"], input[id*="user" i], input[name*="user" i], input[id*="login" i], input[name*="login" i]');
-                if(!userEl){
-                    // fallback: first visible text/email input
-                    var candU = Array.from(document.querySelectorAll('input[type="text"], input[type="email"], input:not([type])'));
-                    userEl = candU.find(function(x){return x && x.offsetParent !== null;}) || null;
+                function findUser(){
+                    var userEl = document.querySelector('input#userId, input[name="userId"], input[name="username"], input[id*="user" i], input[name*="user" i], input[id*="login" i], input[name*="login" i]');
+                    if(!userEl){
+                        var candU = Array.from(document.querySelectorAll('input[type="text"], input[type="email"], input:not([type])'));
+                        userEl = candU.find(function(x){return x && x.offsetParent !== null;}) || null;
+                    }
+                    return userEl;
                 }
 
-                // pass input
-                var passEl = document.querySelector('input[type="password"], input#password, input[name="password"], input[id*="pass" i], input[name*="pass" i]');
-                if(!passEl){
-                    var candP = Array.from(document.querySelectorAll('input'));
-                    passEl = candP.find(function(x){return (x.type||'').toLowerCase()==='password' && x.offsetParent!==null;}) || null;
+                function findPass(){
+                    var passEl = document.querySelector('input[type="password"], input#password, input[name="password"], input[id*="pass" i], input[name*="pass" i]');
+                    if(!passEl){
+                        var candP = Array.from(document.querySelectorAll('input'));
+                        passEl = candP.find(function(x){return (x.type||'').toLowerCase()==='password' && x.offsetParent!==null;}) || null;
+                    }
+                    return passEl;
                 }
 
-                if(userEl) setVal(userEl, u);
-                if(passEl) setVal(passEl, p);
-
-                // submit button
-                var btn = document.querySelector('#pw-btn, button#pw-btn, input#pw-btn, button[type="submit"], input[type="submit"], button[name="login"], button[id*="login" i], input[id*="login" i]');
-                if(!btn){
-                    // fallback: a/button/input that contains "ログイン"
-                    var all = Array.from(document.querySelectorAll('button,input[type="button"],input[type="submit"],a,[role="button"]'));
-                    btn = all.find(function(e){
-                        var t = (e.innerText || e.value || '').trim();
-                        return t.indexOf('ログイン')>=0;
-                    }) || null;
+                function findBtn(){
+                    var btn = document.querySelector('#pw-btn, button#pw-btn, input#pw-btn, button[type="submit"], input[type="submit"], button[name="login"], button[id*="login" i], input[id*="login" i]');
+                    if(!btn){
+                        var all = Array.from(document.querySelectorAll('button,input[type="button"],input[type="submit"],a,[role="button"]'));
+                        btn = all.find(function(e){
+                            var t = (e.innerText || e.value || '').trim();
+                            return t.indexOf('ログイン')>=0;
+                        }) || null;
+                    }
+                    return btn;
                 }
 
-                if(btn){
-                    clickEl(btn);
-                    AndroidApp.log('autoLoginScript: clicked');
-                } else {
-                    AndroidApp.log('autoLoginScript: submit button not found');
+                var tried = 0;
+                var maxTry = 25; // ~5s
+                var done = false;
+                function tick(){
+                    if(done) return;
+                    tried++;
+                    var userEl = findUser();
+                    var passEl = findPass();
+                    if(userEl) setVal(userEl, u);
+                    if(passEl) setVal(passEl, p);
+                    var btn = findBtn();
+                    if(userEl && passEl && btn){
+                        clickEl(btn);
+                        AndroidApp.log('autoLoginScript: clicked');
+                        done = true;
+                        return;
+                    }
+                    if(tried >= maxTry){
+                        AndroidApp.log('autoLoginScript: element not ready (timeout)');
+                        done = true;
+                        return;
+                    }
+                    setTimeout(tick, 200);
                 }
+                tick();
             } catch(e){
                 AndroidApp.log('autoLoginScript exception: ' + e);
             }
@@ -351,7 +371,8 @@ object WebScripts {
                 // 1) role=dialog / aria-modal / obvious modal containers
                 var dialogs = Array.from(document.querySelectorAll('[role="dialog"],[aria-modal="true"],.modal,.Modal,.dialog,.Dialog,#modal,#dialog'));
                 // 2) candidates for close/ok buttons inside dialogs
-                var words = ['閉じる','×','OK','ＯＫ','確認','同意','許可','次へ','続行','了解','キャンセル'];
+                // NOTE: 「次へ/続行」等を全体DOMで押すと、広告リンク等を誤タップするので禁止。
+                var words = ['閉じる','×','OK','ＯＫ','確認','同意','キャンセル'];
                 var clicked = false;
 
                 function scan(root){
@@ -373,8 +394,7 @@ object WebScripts {
                 for (var d=0; d<dialogs.length && !clicked; d++){
                     clicked = scan(dialogs[d]);
                 }
-                // fallback: scan whole document (topmost overlays sometimes not marked)
-                if (!clicked) clicked = scan(document);
+                // fallback全体走査は危険（広告リンク等を誤クリックする）のでやらない
 
                 AndroidApp.log('popupAutoCloseScript clicked=' + clicked);
             } catch(e) {
@@ -490,12 +510,12 @@ object WebScripts {
                     if(!t){ try { t = (e.textContent || '').trim(); } catch(ex){} }
                     return norm(t);
                 }
-                function isVisible(e, win){
+                function isVisible(e){
                     try {
                         if(!e) return false;
                         var r = e.getBoundingClientRect();
-                        if(r.width < 6 || r.height < 6) return false;
-                        var cs = (win||window).getComputedStyle(e);
+                        if(r.width < 8 || r.height < 8) return false;
+                        var cs = window.getComputedStyle(e);
                         if(!cs) return false;
                         if(cs.visibility === 'hidden' || cs.display === 'none' || cs.opacity === '0') return false;
                         return true;
@@ -516,29 +536,13 @@ object WebScripts {
                     return false;
                 }
 
-                function getAccessibleFrames(){
-                    var frames = [];
-                    var ifs = Array.from(document.querySelectorAll('iframe'));
-                    for(var i=0;i<ifs.length;i++){
-                        var f = ifs[i];
-                        try {
-                            if(!f.contentWindow || !f.contentDocument) continue;
-                            var doc = f.contentDocument;
-                            frames.push({idx:i, iframe:f, win:f.contentWindow, doc:doc});
-                        } catch(e) {
-                        }
-                    }
-                    return frames;
-                }
-
-                function findCandidatesIn(doc, win){
+                function findCandidates(){
                     var sel = 'button,input[type="button"],input[type="submit"],a,[role="button"],[onclick],label,div,span';
-                    var all = [];
-                    try { all = Array.from(doc.querySelectorAll(sel)); } catch(e) { all = []; }
+                    var all = Array.from(document.querySelectorAll(sel));
                     var cand = [];
                     for(var i=0;i<all.length;i++){
                         var e = all[i];
-                        if(!isVisible(e, win)) continue;
+                        if(!isVisible(e)) continue;
                         var t = labelOf(e);
                         if(!t) continue;
                         for(var k=0;k<keys.length;k++){
@@ -548,6 +552,7 @@ object WebScripts {
                             }
                         }
                     }
+                    // prefer clickable tags first
                     function score(e){
                         var tag = (e.tagName||'').toLowerCase();
                         var s = 0;
@@ -565,23 +570,9 @@ object WebScripts {
                     return cand;
                 }
 
-                function findCandidates(){
-                    var out = [];
-                    out = out.concat(findCandidatesIn(document, window).map(function(e){ return {el:e, scope:'top'}; }));
-                    var frames = getAccessibleFrames();
-                    for(var i=0;i<frames.length;i++){
-                        var fr = frames[i];
-                        var c = findCandidatesIn(fr.doc, fr.win);
-                        for(var j=0;j<c.length;j++){
-                            out.push({el:c[j], scope:'frame['+fr.idx+']'});
-                        }
-                    }
-                    return out;
-                }
-
-                function captureRec(stage){
+                function captureRec(){
                     function getXP(el) {
-                        try { if (el.id) return 'id("' + el.id + '")'; } catch(e){}
+                        if (el.id) return 'id("' + el.id + '")';
                         var path = '';
                         while (el && el.nodeType === 1) {
                             var i = 1, s = el.previousSibling;
@@ -594,53 +585,34 @@ object WebScripts {
                     function txtOf(e){
                         return norm((e.innerText || e.value || (e.getAttribute && (e.getAttribute('aria-label') || e.getAttribute('alt'))) || e.title || e.textContent || ''));
                     }
-                    function captureFromDoc(doc, scope){
-                        var tags = ['input','button','a','span','div','img','label','li','td'];
-                        var elements = [];
-                        tags.forEach(function(t){
-                            var list = [];
-                            try { list = Array.from(doc.getElementsByTagName(t)); } catch(e) { list = []; }
-                            list.forEach(function(e){
-                                var txt = txtOf(e);
-                                if(txt.length > 0){
-                                    elements.push({tag:t, xpath:(scope+getXP(e)), text:txt.substring(0,30)});
-                                }
-                            });
-                        });
-                        var btns = [];
-                        try { btns = Array.from(doc.querySelectorAll('[role="button"],[onclick]')); } catch(e) { btns = []; }
-                        btns.forEach(function(e){
+                    var tags = ['input','button','a','span','div','img','label','li','td'];
+                    var elements = [];
+                    tags.forEach(function(t){
+                        Array.from(document.getElementsByTagName(t)).forEach(function(e){
                             var txt = txtOf(e);
-                            if(txt.length>0){
-                                elements.push({tag:(e.tagName||'').toLowerCase(), xpath:(scope+getXP(e)), text:txt.substring(0,30)});
+                            if(txt.length > 0){
+                                elements.push({tag:t, xpath:getXP(e), text:txt.substring(0,30)});
                             }
                         });
-                        return elements;
-                    }
-
-                    var all = [];
-                    all = all.concat(captureFromDoc(document, 'top::'));
-                    var frames = getAccessibleFrames();
-                    for(var i=0;i<frames.length;i++){
-                        try { all = all.concat(captureFromDoc(frames[i].doc, 'frame['+frames[i].idx+']::')); } catch(e){}
-                    }
-                    var t = document.title || '';
-                    if(stage){ t = t + ' [' + stage + ']'; }
-                    AndroidApp.sendRecSnapshot(location.href, t, JSON.stringify(all));
+                    });
+                    Array.from(document.querySelectorAll('[role="button"],[onclick]')).forEach(function(e){
+                        var txt = txtOf(e);
+                        if(txt.length>0){
+                            elements.push({tag:(e.tagName||'').toLowerCase(), xpath:getXP(e), text:txt.substring(0,30)});
+                        }
+                    });
+                    AndroidApp.sendRecSnapshot(location.href, document.title, JSON.stringify(elements));
                 }
 
                 function attempt(n){
-                    if(n===0){
-                        try { captureRec('before'); } catch(e){}
-                    }
                     var cand = findCandidates();
                     AndroidApp.log('deviceAuthPopupProceed: attempt=' + n + ' cand=' + cand.length);
                     var ok = false;
 
-                    for(var i=0;i<cand.length && i<25;i++){
-                        var el = cand[i].el;
-                        if(tryClick(el)) { ok = true; break; }
-                        var p = el.parentElement;
+                    for(var i=0;i<cand.length && i<20;i++){
+                        if(tryClick(cand[i])) { ok = true; break; }
+                        // parent fallback
+                        var p = cand[i].parentElement;
                         for(var j=0;j<4 && p && !ok;j++){
                             if(tryClick(p)) { ok = true; break; }
                             p = p.parentElement;
@@ -650,7 +622,8 @@ object WebScripts {
 
                     if(ok){
                         AndroidApp.onClickResult(label, true);
-                        setTimeout(function(){ try { captureRec('after'); } catch(e){} }, 700);
+                        // clickの結果DOMが変わるので少し待ってからREC採取
+                        setTimeout(function(){ captureRec(); }, 700);
                         return;
                     }
 
@@ -658,7 +631,8 @@ object WebScripts {
                         setTimeout(function(){ attempt(n+1); }, 350);
                     } else {
                         AndroidApp.onClickResult(label, false);
-                        try { captureRec('failed'); } catch(e){}
+                        // 失敗しても現状のRECを採取しておく
+                        try { captureRec(); } catch(e){}
                     }
                 }
 

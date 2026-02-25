@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/Display.kt
-//ver 1.00-43
+//ver 1.00-44
 package com.papa.sbiwebbot
 import android.animation.ArgbEvaluator
 import android.animation.ValueAnimator
@@ -24,7 +24,7 @@ import java.util.*
 class Display(private val context: Context, private val tvLog: TextView, private val tabLayout: TabLayout) {
     private val handler = Handler(Looper.getMainLooper())
     private val blinkingAnims = mutableMapOf<Int, ValueAnimator>()
-    private val appVersion = "1.00-43"
+    private val appVersion = "1.00-44"
 
     init {
         tvLog.setOnClickListener {
@@ -151,12 +151,13 @@ class Display(private val context: Context, private val tvLog: TextView, private
         box.addView(btnRow)
 
         val grid = GridLayout(context).apply {
+            // 3x4 keypad (1-9 / CLR-0-BS)
             columnCount = 3
             rowCount = 4
             setPadding(0, 16, 0, 0)
         }
 
-        fun addKey(label: String, onKey: () -> Unit) {
+        fun addKey(label: String, row: Int, col: Int, onKey: () -> Unit) {
             val b = Button(context).apply {
                 text = label
                 setOnClickListener { onKey() }
@@ -164,28 +165,35 @@ class Display(private val context: Context, private val tvLog: TextView, private
             val lp = GridLayout.LayoutParams().apply {
                 width = 0
                 height = ViewGroup.LayoutParams.WRAP_CONTENT
-                columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f)
-                rowSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f)
+                columnSpec = GridLayout.spec(col, 1, 1f)
+                rowSpec = GridLayout.spec(row, 1, 1f)
                 setMargins(6, 6, 6, 6)
             }
             grid.addView(b, lp)
         }
 
-        listOf("1","2","3","4","5","6","7","8","9").forEach { d ->
-            addKey(d) {
-                et.append(d)
-                onInput(et.text?.toString() ?: "")
-            }
-        }
-        addKey("CLR") {
+        // Row 0: 1 2 3
+        addKey("1", 0, 0) { et.append("1"); onInput(et.text?.toString() ?: "") }
+        addKey("2", 0, 1) { et.append("2"); onInput(et.text?.toString() ?: "") }
+        addKey("3", 0, 2) { et.append("3"); onInput(et.text?.toString() ?: "") }
+        // Row 1: 4 5 6
+        addKey("4", 1, 0) { et.append("4"); onInput(et.text?.toString() ?: "") }
+        addKey("5", 1, 1) { et.append("5"); onInput(et.text?.toString() ?: "") }
+        addKey("6", 1, 2) { et.append("6"); onInput(et.text?.toString() ?: "") }
+        // Row 2: 7 8 9
+        addKey("7", 2, 0) { et.append("7"); onInput(et.text?.toString() ?: "") }
+        addKey("8", 2, 1) { et.append("8"); onInput(et.text?.toString() ?: "") }
+        addKey("9", 2, 2) { et.append("9"); onInput(et.text?.toString() ?: "") }
+        // Row 3: CLR 0 BS
+        addKey("CLR", 3, 0) {
             et.setText("")
             onInput("")
         }
-        addKey("0") {
+        addKey("0", 3, 1) {
             et.append("0")
             onInput(et.text?.toString() ?: "")
         }
-        addKey("BS") {
+        addKey("BS", 3, 2) {
             val s = et.text?.toString() ?: ""
             if (s.isNotEmpty()) {
                 et.setText(s.dropLast(1))

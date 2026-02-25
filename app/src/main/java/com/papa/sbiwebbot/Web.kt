@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/Web.kt
-//ver 1.00-43
+//ver 1.00-44
 package com.papa.sbiwebbot
 
 import android.content.Context
@@ -9,6 +9,7 @@ import android.os.Looper
 import android.webkit.WebChromeClient
 import android.webkit.JsPromptResult
 import android.webkit.JsResult
+import android.webkit.CookieManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import org.json.JSONObject
@@ -36,6 +37,13 @@ class Web(private val webView: WebView, private val display: Display) {
     private val jsBridge = WebJsBridge(webView.context, display) { callback }
 
     init {
+        // Cookie: accept + persist
+        try {
+            CookieManager.getInstance().setAcceptCookie(true)
+            CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
+        } catch (_: Exception) {
+        }
+
         webView.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true

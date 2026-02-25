@@ -1,8 +1,11 @@
 //app/src/main/java/com/papa/sbiwebbot/Web.kt
-//ver 1.00-30
+//ver 1.00-35
 package com.papa.sbiwebbot
 
+import android.content.Context
 import android.graphics.Bitmap
+import android.os.Handler
+import android.os.Looper
 import android.webkit.WebChromeClient
 import android.webkit.JsPromptResult
 import android.webkit.JsResult
@@ -25,7 +28,12 @@ class Web(private val webView: WebView, private val display: Display) {
     private var callback: WebCallback? = null
     private var currentUrl: String? = null
 
-    private val jsBridge = WebJsBridge(display) { callback }
+    private var lastInspectUrl: String? = null
+    private var lastInspectAt: Long = 0L
+
+    private val ui = Handler(Looper.getMainLooper())
+
+    private val jsBridge = WebJsBridge(webView.context, display) { callback }
 
     init {
         webView.settings.apply {
@@ -33,11 +41,12 @@ class Web(private val webView: WebView, private val display: Display) {
             domStorageEnabled = true
             loadWithOverviewMode = true
             useWideViewPort = true
+
+            // allow scroll/zoom for device-auth popup pages
             setSupportZoom(true)
             builtInZoomControls = true
             displayZoomControls = false
         }
-
         webView.addJavascriptInterface(jsBridge, "AndroidApp")
 
         webView.webChromeClient = object : WebChromeClient() {
@@ -90,9 +99,16 @@ class Web(private val webView: WebView, private val display: Display) {
 
                 webView.evaluateJavascript(WebScripts.popupAutoCloseScript(), null)
 
-                // 解析は「未知サイト(=メールURL等)」のみ
+                // デバイス認証URL(メールから開いたサイト)のフィッシング注意ポップアップを閉じる
+                if (url != null && url.contains("/deviceAuthentication/input", ignoreCase = true)) {
+                    // JS側で複数回リトライし、成功/失敗に関わらずREC候補も送ってくる
+                    webView.evaluateJavascript(WebScripts.deviceAuthPopupProceedScript(), null)
+                }
+
+                // 解析は「未知サイト(=メールURL等)」のみ。
+                // 無限ループ防止のため、同一URLでの連続実行を抑制する。
                 if (shouldInspect(url)) {
-                    injectInspectScript()
+                    requestInspect(reason = "pageFinished")
                 }
             }
         }
@@ -148,7 +164,24 @@ class Web(private val webView: WebView, private val display: Display) {
         webView.evaluateJavascript(WebScripts.rankingScript(), null)
     }
 
-    private fun injectInspectScript() {
+    
+    private fun requestInspect(reason: String) {
+        val url = currentUrl
+        if (!shouldInspect(url)) return
+
+        val now = System.currentTimeMillis()
+        // 同一URLで短時間に連続実行しない（無限ループ/過負荷防止）
+        if (url != null && url == lastInspectUrl && (now - lastInspectAt) < 1500) {
+            return
+        }
+        lastInspectUrl = url
+        lastInspectAt = now
+
+        display.appendLog("REC: inspect ($reason) url=${url ?: ""}")
+        injectInspectScript()
+    }
+
+private fun injectInspectScript() {
         display.setTabState(2, true, "#FFFFCC")
         webView.evaluateJavascript(WebScripts.inspectScript(), null)
     }

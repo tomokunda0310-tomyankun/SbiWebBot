@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/Web.kt
-//ver 1.00-44
+//ver 1.00-46
 package com.papa.sbiwebbot
 
 import android.content.Context
@@ -28,6 +28,7 @@ class Web(private val webView: WebView, private val display: Display) {
 
     private var callback: WebCallback? = null
     private var currentUrl: String? = null
+    private var autoRunningFlag: Boolean = false
 
     private var lastInspectUrl: String? = null
     private var lastInspectAt: Long = 0L
@@ -77,6 +78,17 @@ class Web(private val webView: WebView, private val display: Display) {
         }
 
         webView.webViewClient = object : WebViewClient() {
+
+            override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
+                val u = url ?: return false
+                // AUTO中はSBI以外への遷移をブロック（広告/誤タップ対策）
+                if (autoRunningFlag && !isSbiDomain(u) && !u.startsWith("about:") && !u.startsWith("data:")) {
+                    display.appendLog("WEB: blocked external url -> $u")
+                    return true
+                }
+                return false
+            }
+
 
             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                 currentUrl = url
@@ -130,7 +142,11 @@ class Web(private val webView: WebView, private val display: Display) {
     fun goBack() { if (webView.canGoBack()) webView.goBack() }
     fun getCurrentUrl(): String? = currentUrl
 
-    private fun isSbiDomain(url: String?): Boolean {
+    fun setAutoRunning(running: Boolean) {
+        autoRunningFlag = running
+    }
+
+fun isSbiDomain(url: String?): Boolean {
         val u = (url ?: "").lowercase()
         return u.contains("sbisec.co.jp") ||
             u.contains("login.sbisec.co.jp") ||

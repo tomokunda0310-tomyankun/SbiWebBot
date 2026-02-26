@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/WebScripts.kt
-//ver 1.00-44
+//ver 1.00-46
 package com.papa.sbiwebbot
 
 import org.json.JSONObject

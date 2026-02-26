@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/Display.kt
-//ver 1.00-44
+//ver 1.00-46
 package com.papa.sbiwebbot
 import android.animation.ArgbEvaluator
 import android.animation.ValueAnimator
@@ -24,7 +24,7 @@ import java.util.*
 class Display(private val context: Context, private val tvLog: TextView, private val tabLayout: TabLayout) {
     private val handler = Handler(Looper.getMainLooper())
     private val blinkingAnims = mutableMapOf<Int, ValueAnimator>()
-    private val appVersion = "1.00-44"
+    private val appVersion = "1.00-46"
 
     init {
         tvLog.setOnClickListener {
@@ -108,6 +108,7 @@ class Display(private val context: Context, private val tvLog: TextView, private
      */
     fun showRecPopup(
         el: HtmlElement,
+        authCodes: List<String> = emptyList(),
         initialText: String = "",
         onTap: () -> Unit,
         onInput: (String) -> Unit,
@@ -128,10 +129,38 @@ class Display(private val context: Context, private val tvLog: TextView, private
             setText(initialText)
             setSelection(text.length)
         }
+
+        // 認証コードボタン（テンキー廃止）
+        if (authCodes.isNotEmpty()) {
+            val codeRow = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(0, 12, 0, 0)
+            }
+            authCodes.distinct().take(3).forEach { code ->
+                val b = Button(context).apply {
+                    text = code
+                    setOnClickListener {
+                        et.setText(code)
+                        et.setSelection(et.text.length)
+                        onInput(code)
+                    }
+                    setOnLongClickListener {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText("AuthCode", code))
+                        Toast.makeText(context, "AuthCode Copied", Toast.LENGTH_SHORT).show()
+                        true
+                    }
+                }
+                codeRow.addView(b, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            }
+            box.addView(codeRow)
+        }
+
         box.addView(et)
 
         val btnRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
+            setPadding(0, 12, 0, 0)
         }
         val btnTap = Button(context).apply {
             text = "TAP"
@@ -142,66 +171,13 @@ class Display(private val context: Context, private val tvLog: TextView, private
             setOnClickListener { onBack() }
         }
         val btnOk = Button(context).apply {
-            text = "OK"
+            text = "INPUT"
             setOnClickListener { onInput(et.text?.toString() ?: "") }
         }
         btnRow.addView(btnTap, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         btnRow.addView(btnBack, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         btnRow.addView(btnOk, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         box.addView(btnRow)
-
-        val grid = GridLayout(context).apply {
-            // 3x4 keypad (1-9 / CLR-0-BS)
-            columnCount = 3
-            rowCount = 4
-            setPadding(0, 16, 0, 0)
-        }
-
-        fun addKey(label: String, row: Int, col: Int, onKey: () -> Unit) {
-            val b = Button(context).apply {
-                text = label
-                setOnClickListener { onKey() }
-            }
-            val lp = GridLayout.LayoutParams().apply {
-                width = 0
-                height = ViewGroup.LayoutParams.WRAP_CONTENT
-                columnSpec = GridLayout.spec(col, 1, 1f)
-                rowSpec = GridLayout.spec(row, 1, 1f)
-                setMargins(6, 6, 6, 6)
-            }
-            grid.addView(b, lp)
-        }
-
-        // Row 0: 1 2 3
-        addKey("1", 0, 0) { et.append("1"); onInput(et.text?.toString() ?: "") }
-        addKey("2", 0, 1) { et.append("2"); onInput(et.text?.toString() ?: "") }
-        addKey("3", 0, 2) { et.append("3"); onInput(et.text?.toString() ?: "") }
-        // Row 1: 4 5 6
-        addKey("4", 1, 0) { et.append("4"); onInput(et.text?.toString() ?: "") }
-        addKey("5", 1, 1) { et.append("5"); onInput(et.text?.toString() ?: "") }
-        addKey("6", 1, 2) { et.append("6"); onInput(et.text?.toString() ?: "") }
-        // Row 2: 7 8 9
-        addKey("7", 2, 0) { et.append("7"); onInput(et.text?.toString() ?: "") }
-        addKey("8", 2, 1) { et.append("8"); onInput(et.text?.toString() ?: "") }
-        addKey("9", 2, 2) { et.append("9"); onInput(et.text?.toString() ?: "") }
-        // Row 3: CLR 0 BS
-        addKey("CLR", 3, 0) {
-            et.setText("")
-            onInput("")
-        }
-        addKey("0", 3, 1) {
-            et.append("0")
-            onInput(et.text?.toString() ?: "")
-        }
-        addKey("BS", 3, 2) {
-            val s = et.text?.toString() ?: ""
-            if (s.isNotEmpty()) {
-                et.setText(s.dropLast(1))
-                et.setSelection(et.text.length)
-                onInput(et.text?.toString() ?: "")
-            }
-        }
-        box.addView(grid)
 
         AlertDialog.Builder(context)
             .setTitle("REC")

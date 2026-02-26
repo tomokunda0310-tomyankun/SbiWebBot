@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/MainActivity.kt
-//ver 1.00-44
+//ver 1.00-46
 package com.papa.sbiwebbot
 
 import android.os.Bundle
@@ -167,6 +167,7 @@ class MainActivity : AppCompatActivity() {
             // 要望: RECポップアップにテンキー + BACK。User/Pass自動入力は廃止。
             display.showRecPopup(
                 el = el,
+                authCodes = listOfNotNull(lastAuthCode),
                 initialText = "",
                 onTap = {
                     web.executeAction(el.xpath, "click")
@@ -440,6 +441,7 @@ class MainActivity : AppCompatActivity() {
         if (etConfig.text.isNullOrBlank()) return
 
         autoRunning = true
+        web.setAutoRunning(true)
         pendingDeviceAuthUrl = null
         otpClickInFlight = false
         otpClickOk = false
@@ -606,6 +608,7 @@ class MainActivity : AppCompatActivity() {
     private fun stopAuto(reason: String) {
         display.appendLog("AUTO: stop ($reason)")
         autoRunning = false
+        web.setAutoRunning(false)
         pendingDeviceAuthUrl = null
         mailPollGen++
         sbiMailPolling = false

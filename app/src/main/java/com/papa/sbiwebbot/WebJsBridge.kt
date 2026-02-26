@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/WebJsBridge.kt
-//ver 1.00-34
+//ver 1.00-46
 package com.papa.sbiwebbot
 
 import android.content.ContentValues

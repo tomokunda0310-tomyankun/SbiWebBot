@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/WebFlow.kt
-//ver 1.00-21
+//ver 1.00-46
 package com.papa.sbiwebbot
 
 /**

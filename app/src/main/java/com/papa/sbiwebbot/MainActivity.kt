@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/MainActivity.kt
-//ver 1.00-59
+//ver 1.00-60
 package com.papa.sbiwebbot
 
 import android.os.Bundle
@@ -153,9 +153,12 @@ class MainActivity : AppCompatActivity() {
                     webLoading = isLoading
                     updateTabVisibility()
                     if (!isLoading) {
+                        // cookie log only (no persist)
+                        logCookies(url)
+
                         // Cookie自動保存（SBIドメインのみ）
                         if (isSbiDomain(url)) {
-                            cookieStore.maybeSaveDebounced()
+                        // cookie save disabled (log-only mode)
                         }
 
                         // 勝手に外部サイトへ飛ぶ事故対策: AUTO中にSBI以外へ遷移したら停止してTOPへ戻す
@@ -290,7 +293,8 @@ class MainActivity : AppCompatActivity() {
             val urls = mail.extractUrls(item.body)
             display.showMailOption(item, urls) { url ->
                 if (url.contains("m.sbisec.co.jp/deviceAuthentication", ignoreCase = true)) {
-                    openAuthUrl(url)
+                    stopSbiMailPolling("manual mail url open")
+                    openAuthUrl(url, manual = true)
                 } else {
                     webMain.loadUrl(url)
                     showAuthTab(false)
@@ -322,7 +326,7 @@ class MainActivity : AppCompatActivity() {
     override fun onPause() {
         super.onPause()
         // Cookie自動保存（configのように）
-        cookieStore.saveNow()
+        // cookie save disabled (log-only mode)
     }
 
     private fun setupTabs(tl: TabLayout) {
@@ -570,8 +574,13 @@ class MainActivity : AppCompatActivity() {
         wMain.visibility = if (show) View.GONE else View.VISIBLE
     }
 
-    private fun openAuthUrl(url: String) {
+    private fun openAuthUrl(url: String, manual: Boolean = false) {
         display.appendLog("AUTH: open in AUTH tab")
+        // When user opens device-auth url manually, stop mail polling and auto actions.
+        if (manual) {
+            stopSbiMailPolling("manual auth open")
+            stopAuto("manual auth open")
+        }
         // AUTH画面表示中はAUTOを止める（勝手に巡回しない）
         autoRunning = false
         webMain.setAutoRunning(false)
@@ -622,16 +631,9 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        // 3) ETGate判定
-        // /ETGate/ は未ログインでも一瞬出る（即ログインへリダイレクトされる）ため、
-        // 「数秒間安定してETGateに居続けた」時だけ login complete とみなす。
-        if (url.contains("/ETGate/")) {
-            if (etgateSeenAt == 0L) etgateSeenAt = now
-            if (now - etgateSeenAt > 5000L) {
-                stopAuto("login complete")
-                return
-            }
-        } else {
+        // 3) ETGate は未ログインでも一瞬表示されるため、ここでは login complete 判定に使わない。
+        // ループ防止は「autoLogin 2回まで」で止める。
+        if (!url.contains("/ETGate/")) {
             etgateSeenAt = 0L
         }
 
@@ -727,8 +729,14 @@ class MainActivity : AppCompatActivity() {
         tick()
     }
 
-    private fun stopSbiMailPolling() {
+    private fun stopSbiMailPolling(reason: String) {
+        mailPollGen++
         sbiMailPolling = false
+        mailLoading = false
+        display.appendLog("MAIL: polling stop ($reason)")
+        // MAIL tab color: neutral
+        display.setTabState(1, false, "#CCCCCC")
+        updateTabVisibility()
     }
 
     private fun handleMailForAuto(list: List<EmailItem>) {
@@ -780,6 +788,19 @@ class MainActivity : AppCompatActivity() {
         val u = (url ?: "").lowercase()
         return u.contains("sbisec.co.jp") || u.contains("login.sbisec.co.jp") || u.contains("m.sbisec.co.jp")
     }
+
+
+private fun logCookies(url: String?) {
+    if (!isSbiDomain(url)) return
+    try {
+        val u = url ?: return
+        val c = android.webkit.CookieManager.getInstance().getCookie(u) ?: ""
+        val head = if (c.length > 180) c.substring(0, 180) + "..." else c
+        display.appendLog("COOKIE: url=$u len=${c.length} head=$head")
+    } catch (_: Throwable) {
+    }
+}
+
 
     private fun stopAuto(reason: String) {
         display.appendLog("AUTO: stop ($reason)")

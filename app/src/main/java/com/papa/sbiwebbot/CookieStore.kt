@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/CookieStore.kt
-//ver 1.00-54
+//ver 1.00-59
 package com.papa.sbiwebbot
 
 import android.content.Context
@@ -7,9 +7,12 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Base64
 import android.webkit.CookieManager
+import android.webkit.ValueCallback
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import javax.crypto.Cipher
 import javax.crypto.spec.SecretKeySpec
 
@@ -77,6 +80,35 @@ class CookieStore(private val context: Context) {
             try { cm.flush() } catch (_: Exception) {}
         } catch (_: Exception) {
             // ignore
+        }
+    }
+
+    /**
+     * 起動時にCookieを「リセット」する。
+     * 要望: しばらくは過去Cookieを読まない（更新後も引き継がない）
+     */
+    fun resetAll() {
+        val cm = CookieManager.getInstance()
+        try {
+            val latch = CountDownLatch(1)
+            cm.removeAllCookies(ValueCallback { latch.countDown() })
+            latch.await(1500, TimeUnit.MILLISECONDS)
+        } catch (_: Throwable) {
+            try {
+                @Suppress("DEPRECATION")
+                cm.removeAllCookie()
+            } catch (_: Throwable) {
+            }
+        }
+        try {
+            cm.flush()
+        } catch (_: Throwable) {
+        }
+
+        // 退避ファイルも削除
+        try {
+            if (file.exists()) file.delete()
+        } catch (_: Throwable) {
         }
     }
 

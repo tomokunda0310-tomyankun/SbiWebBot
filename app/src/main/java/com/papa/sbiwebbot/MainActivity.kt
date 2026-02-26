@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/MainActivity.kt
-//ver 1.00-58
+//ver 1.00-59
 package com.papa.sbiwebbot
 
 import android.os.Bundle
@@ -9,6 +9,7 @@ import android.content.Context
 import android.view.View
 import android.view.MotionEvent
 import android.widget.*
+import android.webkit.WebStorage
 import androidx.appcompat.app.AppCompatActivity
 import androidx.constraintlayout.widget.Guideline
 import androidx.core.view.isVisible
@@ -59,6 +60,8 @@ class MainActivity : AppCompatActivity() {
     private var mailLoading: Boolean = false
 
     private var autoRunning: Boolean = false
+    // AUTOを「止めた後に勝手に再開」させないためのブロック
+    private var autoBlocked: Boolean = false
     private var lastAuthCode: String? = null
     private var mailPollGen: Int = 0
     private var pendingDeviceAuthUrl: String? = null
@@ -76,6 +79,12 @@ class MainActivity : AppCompatActivity() {
     // autoLogin連打防止（遅い/エラー対策）
     private var lastAutoLoginAt: Long = 0L
     private var lastAutoLoginUrl: String = ""
+
+    // 要望: ログイン試行は2回で止める（3回目は意味ない）
+    private var loginAttemptCount: Int = 0
+
+    // ETGate判定の誤爆対策（/ETGate/ は未ログインでも一瞬出るため）
+    private var etgateSeenAt: Long = 0L
 
 
     // ETGate到達=ログイン済み「っぽい」判定は誤検知しやすいので、一定時間ETGateに留まったらログイン完了とみなす
@@ -116,8 +125,19 @@ class MainActivity : AppCompatActivity() {
         webAuth = Web(wvAuth, display)
         cookieStore = CookieStore(this)
 
-        // Cookie復元（アプリ更新後も引き継ぐ）
-        cookieStore.restore()
+        // ★要望: しばらくは「起動時にCookieリセット」して過去を読まない
+        cookieStore.resetAll()
+        try {
+            WebStorage.getInstance().deleteAllData()
+        } catch (_: Throwable) {
+        }
+        try {
+            wvMain.clearCache(true)
+            wvMain.clearHistory()
+            wvAuth.clearCache(true)
+            wvAuth.clearHistory()
+        } catch (_: Throwable) {
+        }
 
         etConfig = findViewById(R.id.etConfig)
         lvInspect = findViewById(R.id.lvInspect)
@@ -561,6 +581,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun maybeStartAutoPatrol() {
         if (autoRunning) return
+        if (autoBlocked) return
         if (webLoading) return
         if (mailLoading) return
         if (etConfig.text.isNullOrBlank()) return
@@ -601,10 +622,17 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        // 3) ETGateに居る＝ログイン済みとみなしてAUTO停止
+        // 3) ETGate判定
+        // /ETGate/ は未ログインでも一瞬出る（即ログインへリダイレクトされる）ため、
+        // 「数秒間安定してETGateに居続けた」時だけ login complete とみなす。
         if (url.contains("/ETGate/")) {
-            stopAuto("login complete")
-            return
+            if (etgateSeenAt == 0L) etgateSeenAt = now
+            if (now - etgateSeenAt > 5000L) {
+                stopAuto("login complete")
+                return
+            }
+        } else {
+            etgateSeenAt = 0L
         }
 
         when {
@@ -757,6 +785,13 @@ class MainActivity : AppCompatActivity() {
         display.appendLog("AUTO: stop ($reason)")
         autoRunning = false
         webMain.setAutoRunning(false)
+
+        // ループ/試行回数超過で止めた場合は、その後の自動再開もブロック
+        if (reason.contains("sso loop") || reason.contains("autoLogin stopped") || reason.contains("retry")) {
+            autoBlocked = true
+            display.appendLog("AUTO: blocked (manual only until restart)")
+        }
+
         pendingDeviceAuthUrl = null
         mailPollGen++
         sbiMailPolling = false

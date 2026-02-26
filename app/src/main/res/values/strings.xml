@@ -1,3 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--app/src/main/res/values/strings.xml-->
+<!--ver 1.00-50-->
 <resources>
     <string name="app_name">SbiWebBot</string>
 </resources>

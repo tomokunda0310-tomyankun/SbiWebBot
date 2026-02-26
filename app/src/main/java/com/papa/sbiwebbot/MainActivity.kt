@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/MainActivity.kt
-//ver 1.00-46
+//ver 1.00-50
 package com.papa.sbiwebbot
 
 import android.os.Bundle
@@ -17,9 +17,18 @@ import org.json.JSONObject
 class MainActivity : AppCompatActivity() {
     private lateinit var display: Display
     private lateinit var config: Config
-    private lateinit var web: Web
+    private lateinit var webMain: Web
+    private lateinit var webAuth: Web
     private lateinit var mail: Mail
     private lateinit var cookieStore: CookieStore
+
+    private var btnWebMain: Button? = null
+    private var btnWebAuth: Button? = null
+    private var authTabVisible: Boolean = false
+
+    // 認証コード候補（6桁）: すべて表示してユーザーが選択
+    private val authCodeCandidates = mutableListOf<String>()
+    private var selectedAuthCode: String? = null
 
     private lateinit var etConfig: EditText
     private lateinit var lvInspect: ListView
@@ -80,7 +89,12 @@ class MainActivity : AppCompatActivity() {
 
         config = Config(this)
         mail = Mail()
-        web = Web(findViewById(R.id.webView), display)
+        // WebViews (MAIN / AUTH)
+        val wvMain: android.webkit.WebView = findViewById(R.id.webViewMain)
+        val wvAuth: android.webkit.WebView = findViewById(R.id.webViewAuth)
+
+        webMain = Web(wvMain, display)
+        webAuth = Web(wvAuth, display)
         cookieStore = CookieStore(this)
 
         // Cookie復元（アプリ更新後も引き継ぐ）
@@ -93,7 +107,7 @@ class MainActivity : AppCompatActivity() {
         setupTabs(tabLayout)
         setupButtons()
 
-        web.setCallback(object : Web.WebCallback {
+        webMain.setCallback(object : Web.WebCallback {
 
             override fun onWebLoading(isLoading: Boolean, url: String?) {
                 runOnUiThread {
@@ -109,7 +123,7 @@ class MainActivity : AppCompatActivity() {
                         if (autoRunning && !isSbiDomain(url)) {
                             display.appendLog("AUTO: blocked external navigation -> back to SBI TOP")
                             stopAuto("external navigation blocked")
-                            web.loadUrl("https://www.sbisec.co.jp/ETGate/")
+                            webMain.loadUrl("https://www.sbisec.co.jp/ETGate/")
                             return@runOnUiThread
                         }
                         maybeStartAutoPatrol()
@@ -160,24 +174,70 @@ class MainActivity : AppCompatActivity() {
             }
         })
 
+        // deviceAuth(メールURL)は別WebViewで開く。REC/タップはこのWebViewが対象。
+        webAuth.setCallback(object : Web.WebCallback {
+            override fun onWebLoading(isLoading: Boolean, url: String?) {
+                runOnUiThread {
+                    if (authTabVisible) {
+                        webLoading = isLoading
+                        updateTabVisibility()
+                    }
+                }
+            }
+
+            override fun onElementsInspected(list: List<HtmlElement>) {
+                runOnUiThread {
+                    val filtered = list.filter { it.text.contains("認証") }
+                    inspectedElements.clear()
+                    inspectedElements.addAll(filtered)
+                    lvInspect.adapter = ArrayAdapter(
+                        this@MainActivity,
+                        android.R.layout.simple_list_item_1,
+                        filtered.map { "[${it.tag}] ${it.text}" }
+                    )
+                }
+            }
+
+            override fun onAuthDetected(code: String) {
+                // no-op
+            }
+
+            override fun onRankingData(json: String) {
+                // no-op
+            }
+
+            override fun onClickResult(label: String, ok: Boolean) {
+                // no-op
+            }
+        })
+
         lvInspect.setOnItemClickListener { _, _, p, _ ->
             if (webLoading) return@setOnItemClickListener
             val el = inspectedElements[p]
 
+            val activeWeb = if (authTabVisible) webAuth else webMain
+
             // 要望: RECポップアップにテンキー + BACK。User/Pass自動入力は廃止。
             display.showRecPopup(
                 el = el,
-                authCodes = listOfNotNull(lastAuthCode),
+                authCodes = authCodeCandidates,
                 initialText = "",
                 onTap = {
-                    web.executeAction(el.xpath, "click")
+                    activeWeb.executeAction(el.xpath, "click")
                     display.appendLog("CLICK -> ${el.xpath}")
                 },
                 onInput = { v ->
-                    web.executeAction(el.xpath, "input", v)
+                    // 6桁なら「認証コードとして選択」扱い
+                    val vv = v.trim()
+                    if (Regex("""^\\d{6}$""").matches(vv)) {
+                        selectedAuthCode = vv
+                        if (!authCodeCandidates.contains(vv)) authCodeCandidates.add(0, vv)
+                        display.appendLog("AUTH(SELECTED): $vv")
+                    }
+                    activeWeb.executeAction(el.xpath, "input", vv)
                 },
                 onBack = {
-                    web.goBack()
+                    activeWeb.goBack()
                     display.appendLog("WEB: back")
                 }
             )
@@ -188,7 +248,12 @@ class MainActivity : AppCompatActivity() {
             val item = mailItems[p]
             val urls = mail.extractUrls(item.body)
             display.showMailOption(item, urls) { url ->
-                web.loadUrl(url)
+                if (url.contains("m.sbisec.co.jp/deviceAuthentication", ignoreCase = true)) {
+                    openAuthUrl(url)
+                } else {
+                    webMain.loadUrl(url)
+                    showAuthTab(false)
+                }
             }
         }
 
@@ -204,7 +269,7 @@ class MainActivity : AppCompatActivity() {
         updateTabVisibility()
 
         // 起動時: TOPアクセス
-        web.loadUrl("https://www.sbisec.co.jp/ETGate/")
+        webMain.loadUrl("https://www.sbisec.co.jp/ETGate/")
         display.appendLog("System Init: v${display.getVersion()}")
 
         // config読み込み後: メール自動取得
@@ -291,16 +356,25 @@ class MainActivity : AppCompatActivity() {
 
                     display.appendLog("MAIL: fetched ${list.size}")
 
-                    // デバッグ: SBI由来の「認証」メールから6桁とURLを拾う（フィッシング/広告メール対策）
-                    val hit = list.firstOrNull {
-                        (it.from.contains("sbisec", ignoreCase = true) || it.subject.contains("SBI", ignoreCase = true) || it.subject.contains("SBI証券")) &&
-                            (it.subject.contains("認証") || it.body.contains("デバイス認証") || it.body.contains("認証コード"))
-                    }
-                    if (hit != null) {
-                        val m = Regex("""(?<![0-9A-Za-z_])\d{6}(?![0-9A-Za-z_])""").find(hit.body)?.value
-                        if (!m.isNullOrBlank()) display.appendLog("AUTH(MAIL): $m")
-                        if (!m.isNullOrBlank()) { lastAuthCode = m }
-                        val urls = mail.extractUrls(hit.body)
+                    // MAILから「6桁」候補を全部集める（スパム混在でも、候補は全表示してユーザーが選ぶ）
+                    authCodeCandidates.clear()
+                    list.forEach { item ->
+                        val fromOk = item.from.contains("info@sbisec.co.jp", ignoreCase = true)
+                        if (!fromOk) return@forEach
+
+                        Regex("""(?<![0-9A-Za-z_])\d{6}(?![0-9A-Za-z_])""")
+                            .findAll(item.body)
+                            .map { it.value }
+                            .distinct()
+                            .forEach { code ->
+                                if (!authCodeCandidates.contains(code)) {
+                                    authCodeCandidates.add(code)
+                                    display.appendLog("AUTH(MAIL-CAND): $code")
+                                }
+                            }
+
+                        // URLログ（安全ドメインのみ）
+                        val urls = mail.extractUrls(item.body)
                         val safe = urls.firstOrNull {
                             it.contains("sbisec.co.jp", ignoreCase = true) ||
                                 it.contains("sbisec.akamaized.net", ignoreCase = true)
@@ -421,7 +495,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupButtons() {
-        findViewById<Button>(R.id.btnBack).setOnClickListener { web.goBack() }
+        findViewById<Button>(R.id.btnBack).setOnClickListener {
+            if (authTabVisible) webAuth.goBack() else webMain.goBack()
+        }
+
+        val idBtnWebMain = resources.getIdentifier("btnWebMain", "id", packageName)
+        btnWebMain = if (idBtnWebMain != 0) findViewById(idBtnWebMain) else null
+        val idBtnWebAuth = resources.getIdentifier("btnWebAuth", "id", packageName)
+        btnWebAuth = if (idBtnWebAuth != 0) findViewById(idBtnWebAuth) else null
+
+        btnWebMain?.setOnClickListener { showAuthTab(false) }
+        btnWebAuth?.setOnClickListener { showAuthTab(true) }
 
         findViewById<Button>(R.id.btnSaveConfig).setOnClickListener {
             config.saveEncrypted(etConfig.text.toString())
@@ -434,6 +518,23 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun showAuthTab(show: Boolean) {
+        val wMain = findViewById<View>(R.id.webViewMain)
+        val wAuth = findViewById<View>(R.id.webViewAuth)
+        authTabVisible = show
+        wAuth.visibility = if (show) View.VISIBLE else View.GONE
+        wMain.visibility = if (show) View.GONE else View.VISIBLE
+    }
+
+    private fun openAuthUrl(url: String) {
+        display.appendLog("AUTH: open in AUTH tab")
+        // AUTH画面表示中はAUTOを止める（勝手に巡回しない）
+        autoRunning = false
+        webMain.setAutoRunning(false)
+        showAuthTab(true)
+        webAuth.loadUrl(url)
+    }
+
     private fun maybeStartAutoPatrol() {
         if (autoRunning) return
         if (webLoading) return
@@ -441,7 +542,7 @@ class MainActivity : AppCompatActivity() {
         if (etConfig.text.isNullOrBlank()) return
 
         autoRunning = true
-        web.setAutoRunning(true)
+        webMain.setAutoRunning(true)
         pendingDeviceAuthUrl = null
         otpClickInFlight = false
         otpClickOk = false
@@ -458,7 +559,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        val url = web.getCurrentUrl() ?: ""
+        val url = webMain.getCurrentUrl() ?: ""
 
         when {
             url.contains("/login/entry") || url.contains("login.sbisec.co.jp/login/") || url.contains("/idpw/auth") -> {
@@ -470,7 +571,7 @@ class MainActivity : AppCompatActivity() {
                     lastAutoLoginUrl = url
                     lastAutoLoginAt = now
                     display.appendLog("AUTO: autoLogin")
-                    web.autoLogin(etConfig.text.toString())
+                    webMain.autoLogin(etConfig.text.toString())
                 }
             }
 
@@ -482,7 +583,7 @@ class MainActivity : AppCompatActivity() {
                     display.appendLog("AUTO: send OTP email")
                     otpClickInFlight = true
                     otpClickMs = now
-                    web.sendOtpEmail()
+                    webMain.sendOtpEmail()
                 }
             }
 
@@ -496,14 +597,16 @@ class MainActivity : AppCompatActivity() {
             }
 
             url.contains("deviceAuthentication", ignoreCase = true) -> {
-                val code = lastAuthCode
+                val code = selectedAuthCode
                 if (!code.isNullOrBlank()) {
                     display.appendLog("AUTO: submit device auth code")
-                    web.submitDeviceAuthCode(code)
+                    webMain.submitDeviceAuthCode(code)
+                    stopAuto("device-auth submitted")
                 } else {
-                    display.appendLog("AUTO: auth code missing")
+                    display.appendLog("AUTO: auth code not selected (open AUTH tab)")
+                    // 自動では進めない。ユーザーが候補から選択して入力する。
+                    stopAuto("device-auth waiting selection")
                 }
-                stopAuto("device-auth submitted")
                 return
             }
 
@@ -569,7 +672,7 @@ class MainActivity : AppCompatActivity() {
             sbiMailPolling = false
 
             display.appendLog("AUTO: deviceAuthUrl found -> open")
-            web.loadUrl(url)
+            openAuthUrl(url)
         }
     }
 
@@ -582,14 +685,17 @@ class MainActivity : AppCompatActivity() {
             // 仕様: 送信ボタン押下時刻以降のみ
             if (minSentMs > 0 && m.sentTimeMs > 0 && m.sentTimeMs < minSentMs) continue
 
-            // AUTH CODE: 同一メール内の6桁コードを拾う（未設定なら保持）
-            if (lastAuthCode.isNullOrBlank()) {
-                val code = Regex("""(?<![0-9A-Za-z_])\d{6}(?![0-9A-Za-z_])""").find(m.body)?.value
-                if (!code.isNullOrBlank()) {
-                    lastAuthCode = code
-                    display.appendLog("AUTH(MAIL): $code")
+            // AUTH CODE: メール本文内の「6桁」を全部拾う（スパム混在でも候補を全部出す）
+            Regex("""(?<![0-9A-Za-z_])\d{6}(?![0-9A-Za-z_])""")
+                .findAll(m.body)
+                .map { it.value }
+                .distinct()
+                .forEach { code ->
+                    if (!authCodeCandidates.contains(code)) {
+                        authCodeCandidates.add(code)
+                        display.appendLog("AUTH(MAIL-CAND): $code")
+                    }
                 }
-            }
 
             val urls = mail.extractUrls(m.body)
             val hit = urls.firstOrNull {
@@ -608,7 +714,7 @@ class MainActivity : AppCompatActivity() {
     private fun stopAuto(reason: String) {
         display.appendLog("AUTO: stop ($reason)")
         autoRunning = false
-        web.setAutoRunning(false)
+        webMain.setAutoRunning(false)
         pendingDeviceAuthUrl = null
         mailPollGen++
         sbiMailPolling = false

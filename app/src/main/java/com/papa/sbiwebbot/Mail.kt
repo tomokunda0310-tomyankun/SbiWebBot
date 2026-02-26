@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/Mail.kt
-//ver 1.00-46
+//ver 1.00-50
 package com.papa.sbiwebbot
 import org.json.JSONObject
 import java.util.*

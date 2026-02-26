@@ -1,3 +1,5 @@
+@REM gradlew.bat
+@REM ver 1.00-50
 @rem
 @rem Copyright 2015 the original author or authors.
 @rem

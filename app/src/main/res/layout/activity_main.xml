@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--app/src/main/res/layout/activity_main.xml-->
-<!--ver 1.00-55-->
+<!--ver 1.01-00-->
 <androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/root"
@@ -30,6 +30,19 @@
             android:layout_height="wrap_content"
             android:text="PANEL" />
 
+        <!-- Main page switch -->
+        <Button
+            android:id="@+id/btnPageWeb"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="LOGIN" />
+
+        <Button
+            android:id="@+id/btnPageMail"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="MAIL" />
+
         <!-- Web tab switch -->
         <Button
             android:id="@+id/btnWebMain"
@@ -43,6 +56,8 @@
             android:layout_height="wrap_content"
             android:text="AUTH" />
     </LinearLayout>
+
+    <!-- auth code candidates bar (shown when candidates exist) -->
     <HorizontalScrollView
         android:id="@+id/codeScroll"
         android:layout_width="0dp"
@@ -51,7 +66,7 @@
         android:fillViewport="true"
         android:scrollbars="none"
         android:visibility="gone"
-        app:layout_constraintTop_toBottomOf="@id/codeScroll"
+        app:layout_constraintTop_toBottomOf="@id/topBar"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
 
@@ -63,7 +78,6 @@
             android:padding="4dp" />
     </HorizontalScrollView>
 
-
     <!-- Split position (drag handle moves this) -->
     <androidx.constraintlayout.widget.Guideline
         android:id="@+id/guideSplit"
@@ -72,26 +86,49 @@
         android:orientation="horizontal"
         app:layout_constraintGuide_percent="0.58" />
 
-    <!-- MAIN WebView -->
-    <WebView
-        android:id="@+id/webViewMain"
+    <!-- Main content area (LOGIN WebViews or MAIL list) -->
+    <FrameLayout
+        android:id="@+id/mainContent"
         android:layout_width="0dp"
         android:layout_height="0dp"
         app:layout_constraintTop_toBottomOf="@id/codeScroll"
         app:layout_constraintBottom_toTopOf="@id/splitHandle"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent" />
+        app:layout_constraintEnd_toEndOf="parent">
 
-    <!-- AUTH WebView (device-auth URL) -->
-    <WebView
-        android:id="@+id/webViewAuth"
-        android:layout_width="0dp"
-        android:layout_height="0dp"
-        android:visibility="gone"
-        app:layout_constraintTop_toBottomOf="@id/codeScroll"
-        app:layout_constraintBottom_toTopOf="@id/splitHandle"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent" />
+        <!-- LOGIN area -->
+        <FrameLayout
+            android:id="@+id/webArea"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent">
+
+            <!-- MAIN WebView -->
+            <WebView
+                android:id="@+id/webViewMain"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+
+            <!-- AUTH WebView (device-auth URL) -->
+            <WebView
+                android:id="@+id/webViewAuth"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:visibility="gone" />
+        </FrameLayout>
+
+        <!-- MAIL area -->
+        <FrameLayout
+            android:id="@+id/mailArea"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone">
+
+            <ListView
+                android:id="@+id/lvMail"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+        </FrameLayout>
+    </FrameLayout>
 
     <!-- Drag handle -->
     <LinearLayout
@@ -164,12 +201,6 @@
                     android:padding="8dp"
                     android:textColor="#0F0" />
             </ScrollView>
-
-            <ListView
-                android:id="@+id/lvMail"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:visibility="gone" />
 
             <ListView
                 android:id="@+id/lvInspect"

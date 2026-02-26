@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/WebScripts.kt
-//ver 1.00-50
+//ver 1.01-00
 package com.papa.sbiwebbot
 
 import org.json.JSONObject
@@ -67,9 +67,16 @@ object WebScripts {
                     if(userEl) setVal(userEl, u);
                     if(passEl) setVal(passEl, p);
                     var btn = findBtn();
-                    if(userEl && passEl && btn){
-                        clickEl(btn);
-                        AndroidApp.log('autoLoginScript: clicked');
+                    if(userEl && passEl){
+                        if(btn){
+                            clickEl(btn);
+                        }
+                        // also try to submit the nearest form (some pages ignore button click)
+                        try {
+                            var f = (btn && btn.form) ? btn.form : (userEl.form || passEl.form);
+                            if(f){ f.submit(); }
+                        } catch(ex) {}
+                        AndroidApp.log('autoLoginScript: submitted');
                         done = true;
                         return;
                     }

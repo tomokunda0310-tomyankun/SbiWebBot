@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/CookieStore.kt
-//ver 1.00-59
+//ver 1.01-00
 package com.papa.sbiwebbot
 
 import android.content.Context

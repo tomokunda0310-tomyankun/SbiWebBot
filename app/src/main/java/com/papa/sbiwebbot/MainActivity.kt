@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/MainActivity.kt
-//ver 1.00-60
+//ver 1.01-00
 package com.papa.sbiwebbot
 
 import android.os.Bundle
@@ -26,7 +26,16 @@ class MainActivity : AppCompatActivity() {
 
     private var btnWebMain: Button? = null
     private var btnWebAuth: Button? = null
+    private lateinit var btnBack: Button
+
     private var authTabVisible: Boolean = false
+
+    private var btnPageWeb: Button? = null
+    private var btnPageMail: Button? = null
+
+    private lateinit var webArea: View
+    private lateinit var mailArea: View
+    private var mainPageIsMail: Boolean = false
 
     private lateinit var codeScroll: HorizontalScrollView
     private lateinit var codeBar: LinearLayout
@@ -120,6 +129,9 @@ class MainActivity : AppCompatActivity() {
         // WebViews (MAIN / AUTH)
         val wvMain: android.webkit.WebView = findViewById(R.id.webViewMain)
         val wvAuth: android.webkit.WebView = findViewById(R.id.webViewAuth)
+
+        webArea = findViewById(R.id.webArea)
+        mailArea = findViewById(R.id.mailArea)
 
         webMain = Web(wvMain, display)
         webAuth = Web(wvAuth, display)
@@ -332,13 +344,11 @@ class MainActivity : AppCompatActivity() {
     private fun setupTabs(tl: TabLayout) {
         tabPages = listOf(
             findViewById<View>(R.id.layoutLog),
-            findViewById<View>(R.id.lvMail),
             findViewById<View>(R.id.lvInspect),
             findViewById<View>(R.id.layoutConfig)
         )
 
         tl.addTab(tl.newTab().setText("LOG (v${display.getVersion()})"))
-        tl.addTab(tl.newTab().setText("MAIL"))
         tl.addTab(tl.newTab().setText("REC"))
         tl.addTab(tl.newTab().setText("CONFIG"))
 
@@ -347,30 +357,22 @@ class MainActivity : AppCompatActivity() {
                 val pos = tab?.position ?: 0
                 currentTabIndex = pos
                 updateTabVisibility()
-                // 仕様: 自動メール取得中は、MAILタップでの手動取得は動作しない
-                if (pos == 1 && !sbiMailPolling) fetchMail(isAuto = false)
             }
 
             override fun onTabUnselected(tab: TabLayout.Tab?) {}
 
-            override fun onTabReselected(tab: TabLayout.Tab?) {
-                if (tab?.position == 1 && !sbiMailPolling) fetchMail(isAuto = false)
-            }
+            override fun onTabReselected(tab: TabLayout.Tab?) {}
         })
     }
 
     private fun updateTabVisibility() {
-        // MAIL/RECの重なり防止: 選択中だけVISIBLE、他はGONE
+        // タブ重なり防止: 選択中だけVISIBLE、他はGONE
         tabPages.forEachIndexed { idx, v ->
             v.visibility = if (idx == currentTabIndex) View.VISIBLE else View.GONE
         }
 
-        // 要件: タブ点滅中(=処理中)は中身を非表示(INVISIBLE)
+        // 仕様: 処理中は中身を非表示(INVISIBLE)
         if (currentTabIndex == 1) {
-            lvMail.visibility = if (mailLoading) View.INVISIBLE else View.VISIBLE
-            lvMail.isEnabled = !mailLoading
-        }
-        if (currentTabIndex == 2) {
             lvInspect.visibility = if (webLoading) View.INVISIBLE else View.VISIBLE
             lvInspect.isEnabled = !webLoading
         }
@@ -386,7 +388,7 @@ class MainActivity : AppCompatActivity() {
         updateTabVisibility()
 
         // MAIL: 取得中（薄い青 点滅）
-        display.setTabState(1, true, "#CCEEFF")
+        display.setTabState(0, true, "#CCEEFF")
 
         mail.fetchLatest(etConfig.text.toString()) { res ->
             runOnUiThread {
@@ -431,7 +433,7 @@ class MainActivity : AppCompatActivity() {
                     updateTabVisibility()
 
                     // MAIL: 完了（薄い緑 点灯）
-                    display.setTabState(1, false, "#CCFFCC")
+                    display.setTabState(0, false, "#CCFFCC")
 
                     if (isAuto) {
                         maybeStartAutoPatrol()
@@ -446,7 +448,7 @@ class MainActivity : AppCompatActivity() {
                     display.appendLog("MAIL: fetch fail: ${e.message}")
                     mailLoading = false
                     updateTabVisibility()
-                    display.setTabState(1, false, "#FFCCCC")
+                    display.setTabState(0, false, "#FFCCCC")
                 }
             }
         }
@@ -540,7 +542,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupButtons() {
-        findViewById<Button>(R.id.btnBack).setOnClickListener {
+        btnBack = findViewById(R.id.btnBack)
+        btnBack.setOnClickListener {
+            if (mainPageIsMail) {
+                // MAIL画面では「何もしない」
+                return@setOnClickListener
+            }
             if (authTabVisible) webAuth.goBack() else webMain.goBack()
         }
 
@@ -549,11 +556,28 @@ class MainActivity : AppCompatActivity() {
         val idBtnWebAuth = resources.getIdentifier("btnWebAuth", "id", packageName)
         btnWebAuth = if (idBtnWebAuth != 0) findViewById(idBtnWebAuth) else null
 
+        val idBtnPageWeb = resources.getIdentifier("btnPageWeb", "id", packageName)
+        btnPageWeb = if (idBtnPageWeb != 0) findViewById(idBtnPageWeb) else null
+        val idBtnPageMail = resources.getIdentifier("btnPageMail", "id", packageName)
+        btnPageMail = if (idBtnPageMail != 0) findViewById(idBtnPageMail) else null
+
         codeScroll = findViewById(R.id.codeScroll)
         codeBar = findViewById(R.id.codeBar)
 
-        btnWebMain?.setOnClickListener { showAuthTab(false) }
-        btnWebAuth?.setOnClickListener { showAuthTab(true) }
+        btnWebMain?.setOnClickListener {
+            if (!mainPageIsMail) showAuthTab(false)
+        }
+        btnWebAuth?.setOnClickListener {
+            if (!mainPageIsMail) showAuthTab(true)
+        }
+
+        btnPageWeb?.setOnClickListener {
+            showMainPage(isMail = false)
+        }
+        btnPageMail?.setOnClickListener {
+            showMainPage(isMail = true)
+            if (!sbiMailPolling) fetchMail(isAuto = false)
+        }
 
         findViewById<Button>(R.id.btnSaveConfig).setOnClickListener {
             config.saveEncrypted(etConfig.text.toString())
@@ -564,9 +588,28 @@ class MainActivity : AppCompatActivity() {
                 fetchMail(isAuto = true)
             }
         }
+
+        // 起動直後はLOGIN画面
+        showMainPage(isMail = false)
     }
 
-    private fun showAuthTab(show: Boolean) {
+    private fun showMainPage(isMail: Boolean) {
+        mainPageIsMail = isMail
+        mailArea.visibility = if (isMail) View.VISIBLE else View.GONE
+        webArea.visibility = if (isMail) View.GONE else View.VISIBLE
+
+        // MAIL画面ではWeb切替ボタンを無効化（誤操作防止）
+        btnWebMain?.isEnabled = !isMail
+        btnWebAuth?.isEnabled = !isMail
+        btnBack.isEnabled = !isMail
+
+        if (!isMail) {
+            // LOGIN画面へ戻るときは、直前のAUTH/MAIN状態を維持
+            showAuthTab(authTabVisible)
+        }
+    }
+
+fun showAuthTab(show: Boolean) {
         val wMain = findViewById<View>(R.id.webViewMain)
         val wAuth = findViewById<View>(R.id.webViewAuth)
         authTabVisible = show
@@ -584,6 +627,7 @@ class MainActivity : AppCompatActivity() {
         // AUTH画面表示中はAUTOを止める（勝手に巡回しない）
         autoRunning = false
         webMain.setAutoRunning(false)
+        showMainPage(isMail = false)
         showAuthTab(true)
         webAuth.loadUrl(url)
     }
@@ -735,7 +779,7 @@ class MainActivity : AppCompatActivity() {
         mailLoading = false
         display.appendLog("MAIL: polling stop ($reason)")
         // MAIL tab color: neutral
-        display.setTabState(1, false, "#CCCCCC")
+        display.setTabState(0, false, "#CCCCCC")
         updateTabVisibility()
     }
 

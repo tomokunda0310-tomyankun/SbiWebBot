@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/MainActivity.kt
-//ver 1.00-50
+//ver 1.00-53
 package com.papa.sbiwebbot
 
 import android.os.Bundle
@@ -11,6 +11,7 @@ import android.view.MotionEvent
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.constraintlayout.widget.Guideline
+import androidx.core.view.isVisible
 import com.google.android.material.tabs.TabLayout
 import org.json.JSONObject
 
@@ -25,6 +26,9 @@ class MainActivity : AppCompatActivity() {
     private var btnWebMain: Button? = null
     private var btnWebAuth: Button? = null
     private var authTabVisible: Boolean = false
+
+    private lateinit var codeScroll: HorizontalScrollView
+    private lateinit var codeBar: LinearLayout
 
     // 認証コード候補（6桁）: すべて表示してユーザーが選択
     private val authCodeCandidates = mutableListOf<String>()
@@ -135,12 +139,13 @@ class MainActivity : AppCompatActivity() {
                 runOnUiThread {
                     // 要望: RECは「認証」関連だけ表示（他の文字が多すぎるため）
                     val filtered = list.filter { it.text.contains("認証") }
+                    val showList = if (filtered.isNotEmpty()) filtered else list.take(200)
                     inspectedElements.clear()
-                    inspectedElements.addAll(filtered)
+                    inspectedElements.addAll(showList)
                     lvInspect.adapter = ArrayAdapter(
                         this@MainActivity,
                         android.R.layout.simple_list_item_1,
-                        filtered.map { "[${it.tag}] ${it.text}" }
+                        showList.map { "[${it.tag}] ${it.text}" }
                     )
                 }
             }
@@ -188,12 +193,13 @@ class MainActivity : AppCompatActivity() {
             override fun onElementsInspected(list: List<HtmlElement>) {
                 runOnUiThread {
                     val filtered = list.filter { it.text.contains("認証") }
+                    val showList = if (filtered.isNotEmpty()) filtered else list.take(200)
                     inspectedElements.clear()
-                    inspectedElements.addAll(filtered)
+                    inspectedElements.addAll(showList)
                     lvInspect.adapter = ArrayAdapter(
                         this@MainActivity,
                         android.R.layout.simple_list_item_1,
-                        filtered.map { "[${it.tag}] ${it.text}" }
+                        showList.map { "[${it.tag}] ${it.text}" }
                     )
                 }
             }
@@ -504,6 +510,9 @@ class MainActivity : AppCompatActivity() {
         val idBtnWebAuth = resources.getIdentifier("btnWebAuth", "id", packageName)
         btnWebAuth = if (idBtnWebAuth != 0) findViewById(idBtnWebAuth) else null
 
+        codeScroll = findViewById(R.id.codeScroll)
+        codeBar = findViewById(R.id.codeBar)
+
         btnWebMain?.setOnClickListener { showAuthTab(false) }
         btnWebAuth?.setOnClickListener { showAuthTab(true) }
 
@@ -560,6 +569,12 @@ class MainActivity : AppCompatActivity() {
         }
 
         val url = webMain.getCurrentUrl() ?: ""
+
+        // OTP完了〜SSO遷移中は自動ログインを抑制（無限ループ回避）
+        if (url.contains("/otp/complete") || url.contains("/sso/request")) {
+            handler.postDelayed({ autoTick() }, 800)
+            return
+        }
 
         when {
             url.contains("/login/entry") || url.contains("login.sbisec.co.jp/login/") || url.contains("/idpw/auth") -> {
@@ -719,4 +734,23 @@ class MainActivity : AppCompatActivity() {
         mailPollGen++
         sbiMailPolling = false
     }
+private fun refreshAuthCodeBar() {
+    val codes = authCodeCandidates.distinct().take(12)
+    codeBar.removeAllViews()
+    codeScroll.isVisible = codes.isNotEmpty()
+
+    for (code in codes) {
+        val b = Button(this)
+        b.text = code
+        b.setOnClickListener {
+            selectedAuthCode = code
+            display.appendLog("AUTH(SELECT): $code")
+            // AUTHタブへ切替えて入力+送信（SBIのデバイス認証画面用）
+            btnWebAuth?.performClick()
+            webAuth.submitDeviceAuthCode(code)
+        }
+        codeBar.addView(b)
+    }
+}
+
 }

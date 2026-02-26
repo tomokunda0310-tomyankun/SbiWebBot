@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--app/src/main/res/layout/activity_main.xml-->
-<!--ver 1.00-50-->
+<!--ver 1.00-53-->
 <androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/root"
@@ -43,6 +43,26 @@
             android:layout_height="wrap_content"
             android:text="AUTH" />
     </LinearLayout>
+    <HorizontalScrollView
+        android:id="@+id/codeScroll"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:background="#EEE"
+        android:fillViewport="true"
+        android:scrollbars="none"
+        android:visibility="gone"
+        app:layout_constraintTop_toBottomOf="@id/codeScroll"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <LinearLayout
+            android:id="@+id/codeBar"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:padding="4dp" />
+    </HorizontalScrollView>
+
 
     <!-- Split position (drag handle moves this) -->
     <androidx.constraintlayout.widget.Guideline
@@ -57,7 +77,7 @@
         android:id="@+id/webViewMain"
         android:layout_width="0dp"
         android:layout_height="0dp"
-        app:layout_constraintTop_toBottomOf="@id/topBar"
+        app:layout_constraintTop_toBottomOf="@id/codeScroll"
         app:layout_constraintBottom_toTopOf="@id/splitHandle"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
@@ -68,7 +88,7 @@
         android:layout_width="0dp"
         android:layout_height="0dp"
         android:visibility="gone"
-        app:layout_constraintTop_toBottomOf="@id/topBar"
+        app:layout_constraintTop_toBottomOf="@id/codeScroll"
         app:layout_constraintBottom_toTopOf="@id/splitHandle"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />

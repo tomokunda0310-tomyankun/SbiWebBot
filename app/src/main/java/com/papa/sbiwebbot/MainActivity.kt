@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/MainActivity.kt
-//ver 1.00-57
+//ver 1.00-58
 package com.papa.sbiwebbot
 
 import android.os.Bundle
@@ -76,6 +76,15 @@ class MainActivity : AppCompatActivity() {
     // autoLogin連打防止（遅い/エラー対策）
     private var lastAutoLoginAt: Long = 0L
     private var lastAutoLoginUrl: String = ""
+
+
+    // ETGate到達=ログイン済み「っぽい」判定は誤検知しやすいので、一定時間ETGateに留まったらログイン完了とみなす
+    private var etgateStableSinceMs: Long = 0L
+
+    // 要望: ログインは2回で止める（3回目は意味ない）
+    private var autoLoginAttempts: Int = 0
+    private var autoLoginWindowStartMs: Long = 0L
+
 
     // OTP/SSO直後に再ログインして無限ループするのを防ぐ
     private var suppressAutoLoginUntilMs: Long = 0L
@@ -609,16 +618,29 @@ class MainActivity : AppCompatActivity() {
                 // 連打防止（同一URLで短時間に複数回呼ぶと、入力が遅くなったりエラーになることがある）
                 if (now >= suppressAutoLoginUntilMs) {
                     if (!(url == lastAutoLoginUrl && (now - lastAutoLoginAt) < 2500)) {
-                        lastAutoLoginUrl = url
-                        lastAutoLoginAt = now
-                        display.appendLog("[${Time.now()}] AUTO: autoLogin")
-                        webMain.autoLogin(etConfig.text.toString())
+                        // ログイン試行回数をカウント（2回で止める）
+                        if (autoLoginWindowStartMs == 0L || (now - autoLoginWindowStartMs) > 120_000L) {
+                            autoLoginWindowStartMs = now
+                            autoLoginAttempts = 0
+                        }
+                        if (autoLoginAttempts >= 2) {
+                            stopAuto("login attempts exceeded (2)")
+                        } else {
+                            autoLoginAttempts += 1
+                            lastAutoLoginUrl = url
+                            lastAutoLoginAt = now
+                            display.appendLog("[${Time.now()}] AUTO: autoLogin (#$autoLoginAttempts)")
+                            webMain.autoLogin(etConfig.text.toString())
+                        }
                     }
                 }
             }
 
             // otp entry
             url.contains("/otp/entry") -> {
+                // OTP段階に来たら「ログイン試行カウント」はリセット
+                autoLoginAttempts = 0
+                autoLoginWindowStartMs = 0L
                 // OTP送信ボタンの連打防止: inFlightなら待つ
                 if (!otpClickInFlight) {
                     otpClickInFlight = true

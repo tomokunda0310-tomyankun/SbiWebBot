@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/Web.kt
-//ver 1.00-50
+//ver 1.00-57
 package com.papa.sbiwebbot
 
 import android.content.Context

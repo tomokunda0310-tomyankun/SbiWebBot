@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/MainActivity.kt
-//ver 1.00-54
+//ver 1.00-57
 package com.papa.sbiwebbot
 
 import android.os.Bundle
@@ -76,6 +76,12 @@ class MainActivity : AppCompatActivity() {
     // autoLogin連打防止（遅い/エラー対策）
     private var lastAutoLoginAt: Long = 0L
     private var lastAutoLoginUrl: String = ""
+
+    // OTP/SSO直後に再ログインして無限ループするのを防ぐ
+    private var suppressAutoLoginUntilMs: Long = 0L
+
+    // /sso/request への往復を検知して2回で止める
+    private val recentSsoRequestHits: java.util.ArrayDeque<Long> = java.util.ArrayDeque()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -563,117 +569,116 @@ class MainActivity : AppCompatActivity() {
     private fun autoTick() {
         if (!autoRunning) return
 
-        if (webLoading || mailLoading) {
-            handler.postDelayed({ autoTick() }, 700)
-            return
+        val url = webMain.getCurrentUrl() ?: ""
+        val now = System.currentTimeMillis()
+
+        // 1) ループ検知: /sso/request に2回以上入ったら止める（3回目は意味ない）
+        if (url.contains("/sso/request")) {
+            recentSsoRequestHits.addLast(now)
+            while (recentSsoRequestHits.isNotEmpty() && now - recentSsoRequestHits.first() > 60_000L) {
+                recentSsoRequestHits.removeFirst()
+            }
+            if (recentSsoRequestHits.size >= 2) {
+                stopAuto("sso loop (>=2)")
+                display.appendLog("AUTO: detected SSO loop (>=2). stop.")
+                return
+            }
         }
 
-        val url = webMain.getCurrentUrl() ?: ""
-
-        // OTP完了〜SSO遷移中は自動ログインを抑制（無限ループ回避）
+        // 2) OTP完了〜SSO遷移中は「自動ログイン」を抑制
         if (url.contains("/otp/complete") || url.contains("/sso/request")) {
+            suppressAutoLoginUntilMs = now + 30_000L
             handler.postDelayed({ autoTick() }, 800)
             return
         }
 
+        // 3) ETGateに居る＝ログイン済みとみなしてAUTO停止
+        if (url.contains("/ETGate/")) {
+            stopAuto("login complete")
+            return
+        }
+
         when {
+            // top page -> login
+            url.contains("www.sbisec.co.jp/ETGate") && !url.contains("/ETGate/") -> {
+                webMain.loadUrl("https://www.sbisec.co.jp/ETGate/")
+            }
+
+            // login page
             url.contains("/login/entry") || url.contains("login.sbisec.co.jp/login/") || url.contains("/idpw/auth") -> {
                 // 連打防止（同一URLで短時間に複数回呼ぶと、入力が遅くなったりエラーになることがある）
-                val now = System.currentTimeMillis()
-                if (url == lastAutoLoginUrl && (now - lastAutoLoginAt) < 2500) {
-                    // skip
-                } else {
-                    lastAutoLoginUrl = url
-                    lastAutoLoginAt = now
-                    display.appendLog("AUTO: autoLogin")
-                    webMain.autoLogin(etConfig.text.toString())
+                if (now >= suppressAutoLoginUntilMs) {
+                    if (!(url == lastAutoLoginUrl && (now - lastAutoLoginAt) < 2500)) {
+                        lastAutoLoginUrl = url
+                        lastAutoLoginAt = now
+                        display.appendLog("[${Time.now()}] AUTO: autoLogin")
+                        webMain.autoLogin(etConfig.text.toString())
+                    }
                 }
             }
 
-            // OTP送信は /otp/entry で「1回だけ」
+            // otp entry
             url.contains("/otp/entry") -> {
-                // ここでは「クリック試行」だけ。クリック成功が返ってきたら onClickResult でポーリング開始。
-                if (!otpClickOk && !otpClickInFlight) {
-                    val now = System.currentTimeMillis()
-                    display.appendLog("AUTO: send OTP email")
+                // OTP送信ボタンの連打防止: inFlightなら待つ
+                if (!otpClickInFlight) {
                     otpClickInFlight = true
                     otpClickMs = now
+                    display.appendLog("[${Time.now()}] AUTO: send OTP email")
                     webMain.sendOtpEmail()
                 }
             }
 
-            // confirmに入ったら連打しない。必要ならメール待ちポーリングだけ維持/再開。
+            // otp confirm -> mail polling happens separately
             url.contains("/otp/confirm") -> {
-                // confirmに入ったら、クリック成功済みならポーリングだけ開始/維持
-                if (otpClickOk && !sbiMailPolling) {
-                    display.appendLog("AUTO: otp confirm -> start mail polling")
-                    startSbiMailPolling(otpClickMs)
-                }
-            }
-
-            url.contains("deviceAuthentication", ignoreCase = true) -> {
-                val code = selectedAuthCode
-                if (!code.isNullOrBlank()) {
-                    display.appendLog("AUTO: submit device auth code")
-                    webMain.submitDeviceAuthCode(code)
-                    stopAuto("device-auth submitted")
-                } else {
-                    display.appendLog("AUTO: auth code not selected (open AUTH tab)")
-                    // 自動では進めない。ユーザーが候補から選択して入力する。
-                    stopAuto("device-auth waiting selection")
-                }
-                return
+                // nothing
             }
 
             else -> {
-                // TOP/遷移中はWeb側の自動クリック待ち
+                // nothing
             }
         }
 
-        handler.postDelayed({ autoTick() }, 600)
+        handler.postDelayed({ autoTick() }, 800)
     }
 
-    private fun startMailPolling() {
-        // (旧) 互換のため残すが、現行は startSbiMailPolling() を使う
-        startSbiMailPolling(System.currentTimeMillis())
-    }
-
-    private fun startSbiMailPolling(sentAtMs: Long) {
-        mailPollGen++
-        val gen = mailPollGen
+    private fun startSbiMailPolling(baseMs: Long) {
+        // 既に回っているなら無視
+        if (sbiMailPolling) return
 
         sbiMailPolling = true
-        sbiMailMinSentMs = sentAtMs
-        sbiMailDeadlineMs = sentAtMs + 120_000L
-        pendingDeviceAuthUrl = null
+        mailPollGen += 1
+        val gen = mailPollGen
 
-        // 仕様: クリック後5秒待ってから、5秒間隔で最大120秒ポーリング
+        // 仕様: 「OTP送信クリックが成功した時刻」を基準に、5秒待ってからポーリング開始
+        sbiMailMinSentMs = baseMs + 5_000L
+        sbiMailDeadlineMs = baseMs + 120_000L
+
         display.appendLog("AUTO: wait 5s then poll SBI mail every 5s up to 120s")
 
-        // 仕様: 自動取得中でもタブ遷移を妨げない（MAILへ強制遷移しない）
+        fun tick() {
+            if (!sbiMailPolling) return
+            if (gen != mailPollGen) return
 
-        handler.postDelayed(object : Runnable {
-            override fun run() {
-                if (mailPollGen != gen) return
-
-                val now = System.currentTimeMillis()
-                if (now > sbiMailDeadlineMs) {
-                    sbiMailPolling = false
-                    mailPollGen++
-                    display.setTabState(1, false, "#FFCCCC")
-                    display.showErrorPopup(
-                        "SBIメール未着",
-                        "Eメール送信から120秒以内にSBIメールが見つかりませんでした。\nアプリを終了し、最初からやり直してください。"
-                    ) {
-                        finishAffinity()
-                    }
-                    return
-                }
-
-                fetchMail(isAuto = true)
-                handler.postDelayed(this, 5000)
+            val now = System.currentTimeMillis()
+            if (now < sbiMailMinSentMs) {
+                handler.postDelayed({ tick() }, 400)
+                return
             }
-        }, 5000)
+            if (now > sbiMailDeadlineMs) {
+                sbiMailPolling = false
+                display.appendLog("AUTO: mail polling timeout")
+                return
+            }
+
+            fetchMail(isAuto = true)
+            handler.postDelayed({ tick() }, 5_000)
+        }
+
+        tick()
+    }
+
+    private fun stopSbiMailPolling() {
+        sbiMailPolling = false
     }
 
     private fun handleMailForAuto(list: List<EmailItem>) {

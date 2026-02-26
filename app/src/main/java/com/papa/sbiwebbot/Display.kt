@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/Display.kt
-//ver 1.00-50
+//ver 1.00-56
 package com.papa.sbiwebbot
 import android.animation.ArgbEvaluator
 import android.animation.ValueAnimator
@@ -24,7 +24,7 @@ import java.util.*
 class Display(private val context: Context, private val tvLog: TextView, private val tabLayout: TabLayout) {
     private val handler = Handler(Looper.getMainLooper())
     private val blinkingAnims = mutableMapOf<Int, ValueAnimator>()
-    private val appVersion = "1.00-50"
+    private val appVersion = "1.00-56"
 
     init {
         tvLog.setOnClickListener {

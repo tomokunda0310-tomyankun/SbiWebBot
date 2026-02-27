@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--app/src/main/res/layout/activity_main.xml-->
-<!--ver 1.02-07-->
+<!--ver 1.02-09-->
 <androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/root"
@@ -11,73 +11,103 @@
         android:id="@+id/topBar"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
+        android:orientation="vertical"
         android:padding="4dp"
         android:background="#EEEEEE"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
 
-        <Button
-            android:id="@+id/btnBack"
-            android:layout_width="wrap_content"
+        <LinearLayout
+            android:id="@+id/topRow1"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="BACK" />
+            android:orientation="horizontal">
 
-        <Button
-            android:id="@+id/btnRec"
-            android:layout_width="wrap_content"
+            <Button
+                android:id="@+id/btnBack"
+                android:layout_width="0dp"
+                android:layout_height="36dp"
+                android:layout_weight="1"
+                android:text="BACK"
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/btnRec"
+                android:layout_width="0dp"
+                android:layout_height="36dp"
+                android:layout_weight="1"
+                android:text="REC"
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/btnLog"
+                android:layout_width="0dp"
+                android:layout_height="36dp"
+                android:layout_weight="1"
+                android:text="LOG"
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/btnYahoo"
+                android:layout_width="0dp"
+                android:layout_height="36dp"
+                android:layout_weight="1"
+                android:text="Y!"
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/btnSbi"
+                android:layout_width="0dp"
+                android:layout_height="36dp"
+                android:layout_weight="1"
+                android:text="S!"
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/btnExport"
+                android:layout_width="0dp"
+                android:layout_height="36dp"
+                android:layout_weight="1"
+                android:text="EXP"
+                android:textSize="12sp" />
+
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/topRow2"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="REC" />
+            android:orientation="horizontal"
+            android:paddingTop="2dp">
 
-        <Button
-            android:id="@+id/btnLog"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="LOG" />
+            <Button
+                android:id="@+id/btnNeed"
+                android:layout_width="0dp"
+                android:layout_height="36dp"
+                android:layout_weight="1"
+                android:text="必要"
+                android:textSize="12sp" />
 
-        <Space
-            android:layout_width="12dp"
-            android:layout_height="wrap_content" />
+            <Button
+                android:id="@+id/btnNope"
+                android:layout_width="0dp"
+                android:layout_height="36dp"
+                android:layout_weight="1"
+                android:text="不要"
+                android:textSize="12sp" />
 
-        <Button
-            android:id="@+id/btnYahoo"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Y!" />
-
-        <Button
-            android:id="@+id/btnSbi"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="SBI" />
-
-        <Space
-            android:layout_width="12dp"
-            android:layout_height="wrap_content" />
-
-        <Button
-            android:id="@+id/btnNeed"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="必要" />
-
-        <Button
-            android:id="@+id/btnNope"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="不要" />
-
-        <TextView
-            android:id="@+id/tvNavInfo"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:paddingStart="8dp"
-            android:paddingEnd="4dp"
-            android:text="EXPLORE"
-            android:textSize="12sp"
-            android:maxLines="2" />
+            <TextView
+                android:id="@+id/tvNavInfo"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="3"
+                android:paddingStart="8dp"
+                android:paddingEnd="4dp"
+                android:text="EXPLORE"
+                android:textSize="12sp"
+                android:maxLines="2" />
+        </LinearLayout>
     </LinearLayout>
 
     <WebView

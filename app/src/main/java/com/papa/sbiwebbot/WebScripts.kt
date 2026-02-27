@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/WebScripts.kt
-//ver 1.02-05
+//ver 1.02-08
 package com.papa.sbiwebbot
 
 object WebScripts {
@@ -37,18 +37,24 @@ object WebScripts {
                 if(!el || el.nodeType!==1) return false;
                 var tag=el.tagName.toLowerCase();
                 if(tag==='a' || tag==='button') return true;
+                if(tag==='label') return true;
+                if(tag==='select' || tag==='option') return true;
+                if(tag==='input'){
+                  var tp=(el.getAttribute('type')||'').toLowerCase();
+                  if(tp==='radio' || tp==='checkbox' || tp==='button' || tp==='submit') return true;
+                }
                 var role=(el.getAttribute('role')||'').toLowerCase();
                 if(role==='button' || role==='link') return true;
                 var onclick=el.getAttribute('onclick');
                 if(onclick && onclick.length>0) return true;
                 return false;
               }
-              var all=document.querySelectorAll('a,button,[role=button],[role=link],[onclick]');
+              var all=document.querySelectorAll('a,button,input,label,select,option,[role=button],[role=link],[onclick]');
               var out=[];
               for(var i=0;i<all.length;i++){
                 var el=all[i];
                 if(!isClickable(el)) continue;
-                var t=norm(el.innerText||el.textContent||'');
+                var t=norm(el.innerText||el.textContent||el.value||'');
                 var href='';
                 try { href=el.href||el.getAttribute('href')||''; } catch(e){ href=''; }
                 var xp=xpathOf(el);

@@ -1,9 +1,10 @@
 //app/src/main/java/com/papa/sbiwebbot/MainActivity.kt
-//ver 1.02-07
+//ver 1.02-09
 package com.papa.sbiwebbot
 
 import android.content.Intent
 import android.os.Bundle
+import android.net.Uri
 import android.view.View
 import android.webkit.WebChromeClient
 import android.webkit.JavascriptInterface
@@ -11,6 +12,8 @@ import android.webkit.WebView
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AlertDialog
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import com.google.android.material.tabs.TabLayout
 import org.json.JSONArray
 import org.json.JSONObject
@@ -30,6 +33,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnLog: Button
     private lateinit var btnYahoo: Button
     private lateinit var btnSbi: Button
+    private lateinit var btnExport: Button
     private lateinit var btnNeed: Button
     private lateinit var btnNope: Button
     private lateinit var tvNavInfo: TextView
@@ -38,8 +42,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var display: Display
     private lateinit var logStore: LogStore
 
+    private lateinit var pickLogDirLauncher: ActivityResultLauncher<Uri?>
+
+
     // ==== Explore state ====
-    private val appVersion = "1.02-07"
+    private val appVersion = "1.02-09"
     private val sid: String by lazy {
         SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
     }
@@ -100,6 +107,7 @@ class MainActivity : AppCompatActivity() {
         btnLog = findViewById(R.id.btnLog)
         btnYahoo = findViewById(R.id.btnYahoo)
         btnSbi = findViewById(R.id.btnSbi)
+        btnExport = findViewById(R.id.btnExport)
         btnNeed = findViewById(R.id.btnNeed)
         btnNope = findViewById(R.id.btnNope)
         tvNavInfo = findViewById(R.id.tvNavInfo)
@@ -107,6 +115,22 @@ class MainActivity : AppCompatActivity() {
 
         logStore = LogStore(this, sid, appVersion)
         display = Display(this, tvLog, tabLayout, logStore)
+
+pickLogDirLauncher = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+    if (uri != null) {
+        try {
+            val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            contentResolver.takePersistableUriPermission(uri, flags)
+        } catch (_: Throwable) {
+        }
+        logStore.setPublicTreeUri(uri)
+        display.appendLog("LOG_DIR: set (SAF) -> $uri")
+        Toast.makeText(this, "LOG_DIR set (SAF). Long-press EXP again to change.", Toast.LENGTH_LONG).show()
+    } else {
+        display.appendLog("LOG_DIR: canceled")
+    }
+}
+
 
         // tabs
         // TabLayout is hidden in v1.02-02 (buttons are used instead)
@@ -140,6 +164,28 @@ class MainActivity : AppCompatActivity() {
         btnSbi.setOnClickListener {
             showSbiMenu()
         }
+
+        btnExport.setOnClickListener {
+            val r = logStore.exportAllToPublic()
+            if (r.ok) {
+                display.appendLog("EXPORT: OK -> ${r.publicDir}")
+                Toast.makeText(this, "Export OK: ${r.publicDir}", Toast.LENGTH_SHORT).show()
+            } else {
+                display.appendLog("EXPORT: NG -> ${r.message}")
+                Toast.makeText(this, "Export NG: ${r.message}", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+btnExport.setOnLongClickListener {
+    // One-time setup: choose a folder (e.g. Download/Sbi) via SAF to make log export reliable on Android 13/14.
+    try {
+        Toast.makeText(this, "ログ出力フォルダを選択してください（例: Download/Sbi）", Toast.LENGTH_LONG).show()
+    } catch (_: Throwable) {
+    }
+    pickLogDirLauncher.launch(null)
+    true
+}
+
         btnNeed.setOnClickListener { markNeed() }
         btnNope.setOnClickListener { markNopeAndBack() }
 
@@ -228,6 +274,11 @@ class MainActivity : AppCompatActivity() {
             append("候補数=$cand   $pendingText\n")
             append("ログ保存先: $p\n")
             append("  $oplogName\n  $tryName\n  $pinsName\n")
+            val pubErr = logStore.getLastPublicError()
+            if (pubErr.isNotBlank()) {
+                append("PUBLIC_LOG_ERR: $pubErr\n")
+                append("→ EXP を押してExportを試す\n")
+            }
             append("URL: $url")
         }
     }
@@ -335,8 +386,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateDecisionButtons() {
         val hasTrigger = lastTrigger != null && lastFromUrl != null
-        btnNeed.isEnabled = hasTrigger
-        btnNope.isEnabled = hasTrigger
+        // Always enabled for "intuitive" operation.
+        // If pending is none, markNeed/Nope will just show a message.
+        btnNeed.isEnabled = true
+        btnNope.isEnabled = true
         tvHelp.text = buildHelpText()
     }
 
@@ -468,8 +521,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun markNeed() {
-        val from = lastFromUrl ?: return
-        val trig = lastTrigger ?: return
+        val from = lastFromUrl
+        val trig = lastTrigger
+        if (from == null || trig == null) {
+            display.appendLog("PIN_ADD: skipped (PENDING none)")
+            Toast.makeText(this, "PENDING none: 先にリンクをタップ", Toast.LENGTH_SHORT).show()
+            return
+        }
         val to = webView.url ?: ""
 
         val pinId = "PIN_%04d".format(nextSeq().toInt())
@@ -503,8 +561,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun markNopeAndBack() {
-        val from = lastFromUrl ?: return
-        val trig = lastTrigger ?: return
+        val from = lastFromUrl
+        val trig = lastTrigger
+        if (from == null || trig == null) {
+            display.appendLog("NAV_REJECT: skipped (PENDING none)")
+            Toast.makeText(this, "PENDING none: 先にリンクをタップ", Toast.LENGTH_SHORT).show()
+            return
+        }
         val to = webView.url ?: ""
 
         val o = JSONObject().apply {

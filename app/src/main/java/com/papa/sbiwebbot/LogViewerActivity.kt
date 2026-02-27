@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/LogViewerActivity.kt
-//ver 1.02-00
+//ver 1.02-11
 package com.papa.sbiwebbot
 
 import android.os.Bundle
@@ -10,7 +10,12 @@ import java.io.File
 
 class LogViewerActivity : AppCompatActivity() {
 
-    private val appVersion = "1.02-00"
+    companion object {
+        const val EXTRA_SID = "sid"
+        const val EXTRA_MODE = "mode" // "logs" | "pins"
+    }
+
+    private val appVersion = "1.02-11"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -19,12 +24,18 @@ class LogViewerActivity : AppCompatActivity() {
         val btnShowOp: Button = findViewById(R.id.btnShowOp)
         val btnShowTry: Button = findViewById(R.id.btnShowTry)
         val btnShowPins: Button = findViewById(R.id.btnShowPins)
+        val btnShowXpath: Button = findViewById(R.id.btnShowXpath)
+        val btnShowSref: Button = findViewById(R.id.btnShowSref)
         val tvTitle: TextView = findViewById(R.id.tvTitle)
         val tvBody: TextView = findViewById(R.id.tvBody)
 
-        fun readFile(name: String): String {
+        val sid = intent.getStringExtra(EXTRA_SID) ?: "(no-sid)"
+        val mode = intent.getStringExtra(EXTRA_MODE) ?: "logs"
+
+        fun readFile(relPath: String): String {
             return try {
-                val f = File(filesDir, name)
+                val root = File(filesDir, sid)
+                val f = File(root, relPath)
                 if (!f.exists()) return "(no file) ${f.absolutePath}"
                 f.readText(Charsets.UTF_8)
             } catch (e: Exception) {
@@ -32,15 +43,22 @@ class LogViewerActivity : AppCompatActivity() {
             }
         }
 
-        fun show(name: String) {
-            tvTitle.text = "LOG v$appVersion : $name"
-            tvBody.text = readFile(name)
+        fun show(relPath: String) {
+            tvTitle.text = "LOG v$appVersion : $sid / $relPath"
+            tvBody.text = readFile(relPath)
         }
 
-        btnShowOp.setOnClickListener { show("oplog.txt") }
-        btnShowTry.setOnClickListener { show("nav_try.jsonl") }
-        btnShowPins.setOnClickListener { show("pins.jsonl") }
+        btnShowOp.setOnClickListener { show("log/oplog.txt") }
+        btnShowTry.setOnClickListener { show("log/nav_try.jsonl") }
+        btnShowPins.setOnClickListener { show("pins/pins.jsonl") }
+        btnShowXpath.setOnClickListener { show("log/xpath.log") }
+        btnShowSref.setOnClickListener { show("log/sref.log") }
 
-        show("oplog.txt")
+        // mode hint
+        if (mode == "pins") {
+            show("pins/pins.jsonl")
+        } else {
+            show("log/oplog.txt")
+        }
     }
 }

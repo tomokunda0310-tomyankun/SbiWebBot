@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--app/src/main/res/layout/activity_log_viewer.xml-->
-<!--ver 1.02-00-->
+<!--ver 1.02-11-->
 <androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
@@ -34,6 +34,18 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="pins" />
+
+        <Button
+            android:id="@+id/btnShowXpath"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="xpath" />
+
+        <Button
+            android:id="@+id/btnShowSref"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="sref" />
 
         <TextView
             android:id="@+id/tvTitle"

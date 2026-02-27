@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/WebScripts.kt
-//ver 1.02-08
+//ver 1.02-11
 package com.papa.sbiwebbot
 
 object WebScripts {
@@ -144,9 +144,21 @@ object WebScripts {
                   try { href = el.href || el.getAttribute('href') || ''; } catch(e){ href=''; }
                   var type = '';
                   try { type = el.type || ''; } catch(e){ type=''; }
+                  var name = '';
+                  try { name = el.name || el.getAttribute('name') || ''; } catch(e){ name=''; }
+                  var idv = '';
+                  try { idv = el.id || ''; } catch(e){ idv=''; }
+                  var role = '';
+                  try { role = (el.getAttribute('role')||''); } catch(e){ role=''; }
+                  var aria = '';
+                  try { aria = (el.getAttribute('aria-label')||''); } catch(e){ aria=''; }
                   return {
                     tag: tag,
                     type: type,
+                    name: name,
+                    id: idv,
+                    role: role,
+                    aria: aria,
                     text: text,
                     href: href,
                     xpath: xpathOf(el)
@@ -159,6 +171,32 @@ object WebScripts {
                     if(!el) return;
                     var obj = buildObj(el);
                     if(!obj.xpath) return;
+
+                    if(window.AndroidBridge && window.AndroidBridge.onUserClick){
+                      window.AndroidBridge.onUserClick(JSON.stringify(obj));
+                    }
+                  }catch(e){}
+                }, true);
+
+                // Capture changes for select/radio/checkbox/dropdowns.
+                document.addEventListener('change', function(ev){
+                  try{
+                    var el = pickTarget(ev.target);
+                    if(!el) return;
+                    var obj = buildObj(el);
+                    if(!obj.xpath) return;
+                    obj.event = 'change';
+
+                    // For <select>, include selected option text/value.
+                    try{
+                      if((el.tagName||'').toLowerCase()==='select'){
+                        var opt = el.options && el.selectedIndex>=0 ? el.options[el.selectedIndex] : null;
+                        if(opt){
+                          obj.selectedText = norm(opt.textContent||opt.innerText||'');
+                          obj.selectedValue = (opt.value||'');
+                        }
+                      }
+                    }catch(e){}
 
                     if(window.AndroidBridge && window.AndroidBridge.onUserClick){
                       window.AndroidBridge.onUserClick(JSON.stringify(obj));

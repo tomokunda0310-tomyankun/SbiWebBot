@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/MainActivity.kt
-//ver 1.02-10
+//ver 1.02-11
 package com.papa.sbiwebbot
 
 import android.content.Intent
@@ -46,7 +46,7 @@ class MainActivity : AppCompatActivity() {
 
 
     // ==== Explore state ====
-    private val appVersion = "1.02-09"
+    private val appVersion = "1.02-11"
     private val sid: String by lazy {
         SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
     }
@@ -71,9 +71,12 @@ class MainActivity : AppCompatActivity() {
     private var lastTrigger: RecItem? = null
     private var lastNavTrySeq: Long = -1
 
-    // Files
-    private val fileTry = "nav_try.jsonl"
-    private val filePins = "pins.jsonl"
+    // Files (fixed folder structure)
+    private val fileTry = "log/nav_try" // .jsonl will be appended
+    private val filePins = "pins/pins"  // .jsonl
+    private val fileRecCandidates = "rec/rec_candidates" // .jsonl
+    private val fileXpathLog = "log/xpath" // .log
+    private val fileSrefLog = "log/sref" // .log
 
     // Quick jump URLs
     private val URL_YAHOO_UP = "https://finance.yahoo.co.jp/stocks/ranking/up?market=all"
@@ -114,7 +117,28 @@ class MainActivity : AppCompatActivity() {
         tvHelp = findViewById(R.id.tvHelp)
 
         logStore = LogStore(this, sid, appVersion)
+        logStore.ensureRunFolders()
         display = Display(this, tvLog, tabLayout, logStore)
+
+        // Sref snapshot (replay seeds) - keep it simple and reproducible.
+        // NOTE: do NOT hard-fix tracking/time params here (only keep in comments/log).
+        try {
+            val sb = StringBuilder()
+            sb.append("v=").append(appVersion).append("\n")
+            sb.append("sid=").append(sid).append("\n")
+            sb.append("ts_ms=").append(System.currentTimeMillis()).append("\n")
+            sb.append("\n# Yahoo\n")
+            sb.append("URL_YAHOO_UP=").append(URL_YAHOO_UP).append("\n")
+            sb.append("\n# SBI (OutSide=on / no-login)\n")
+            sb.append("URL_SBI_UPRATE_T1=").append(URL_SBI_UPRATE_T1).append("\n")
+            sb.append("URL_SBI_DOWNRATE_T1=").append(URL_SBI_DOWNRATE_T1).append("\n")
+            sb.append("URL_SBI_TURNOVER_T1=").append(URL_SBI_TURNOVER_T1).append("\n")
+            sb.append("URL_SBI_SALESVAL_T1=").append(URL_SBI_SALESVAL_T1).append("\n")
+            sb.append("\n# NOTE\n")
+            sb.append("- _gl/_ga 等のトラッキング系や日付時刻パラメータは固定化しない（ログに残すのみ）\n")
+            logStore.writeText("log/sref.log", "text/plain", sb.toString())
+        } catch (_: Throwable) {
+        }
 
 pickLogDirLauncher = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
     if (uri != null) {
@@ -149,11 +173,27 @@ pickLogDirLauncher = registerForActivityResult(ActivityResultContracts.OpenDocum
             runRec()
         }
         btnLog.setOnClickListener {
-            showLogPanel()
-        }
-        btnLog.setOnLongClickListener {
-            startActivity(Intent(this, LogViewerActivity::class.java))
-            true
+            AlertDialog.Builder(this)
+                .setTitle("LOG / PIN")
+                .setItems(arrayOf("ログ表示(画面)", "ログ一覧", "PIN一覧")) { _, which ->
+                    when (which) {
+                        0 -> showLogPanel()
+                        1 -> {
+                            val it = Intent(this, LogViewerActivity::class.java)
+                            it.putExtra(LogViewerActivity.EXTRA_SID, sid)
+                            it.putExtra(LogViewerActivity.EXTRA_MODE, "logs")
+                            startActivity(it)
+                        }
+                        2 -> {
+                            val it = Intent(this, LogViewerActivity::class.java)
+                            it.putExtra(LogViewerActivity.EXTRA_SID, sid)
+                            it.putExtra(LogViewerActivity.EXTRA_MODE, "pins")
+                            startActivity(it)
+                        }
+                    }
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
         }
 
         btnYahoo.setOnClickListener {
@@ -194,6 +234,7 @@ btnExport.setOnLongClickListener {
         display.appendLog("System Init: v$appVersion")
         display.appendLog("MODE: EXPLORE (no-login)")
         tvNavInfo.text = "EXPLORE / sid=$sid"
+        display.appendLog("OUT: Download/Sbi/${logStore.getRunDirName()}/...")
 
         tvHelp.text = buildHelpText()
         showRecPanel()
@@ -263,9 +304,6 @@ btnExport.setOnLongClickListener {
         }
 
         val p = logStore.getPublicDirHint()
-        val oplogName = "oplog_${sid}.txt"
-        val tryName = "nav_try_${sid}.jsonl"
-        val pinsName = "pins_${sid}.jsonl"
 
         return buildString {
             append("v$appVersion  $mode  panel=$panel\n")
@@ -273,7 +311,12 @@ btnExport.setOnLongClickListener {
             append("      3) 遷移後『必要』でPIN保存 / 『不要』で戻る  4) BACK\n")
             append("候補数=$cand   $pendingText\n")
             append("ログ保存先: $p\n")
-            append("  $oplogName\n  $tryName\n  $pinsName\n")
+            append("  log/oplog.txt\n")
+            append("  log/nav_try.jsonl\n")
+            append("  pins/pins.jsonl\n")
+            append("  rec/rec_candidates.jsonl\n")
+            append("  log/xpath.log\n")
+            append("  log/sref.log\n")
             val pubErr = logStore.getLastPublicError()
             if (pubErr.isNotBlank()) {
                 append("PUBLIC_LOG_ERR: $pubErr\n")
@@ -345,6 +388,21 @@ btnExport.setOnLongClickListener {
                         })
                     })
 
+                    // also record as a rec_candidate (manual tap)
+                    appendJsonl(fileRecCandidates, JSONObject().apply {
+                        put("sid", sid)
+                        put("ts_ms", System.currentTimeMillis())
+                        put("type", "REC_TAP")
+                        put("url", from)
+                        put("title", try { webView.title ?: "" } catch (_: Throwable) { "" })
+                        put("tag", rec.tag)
+                        put("text", rec.text)
+                        put("href", rec.href ?: JSONObject.NULL)
+                        put("xpath", rec.xpath)
+                        put("score", rec.score)
+                        put("kw", JSONArray(rec.hitKw))
+                    })
+
                     display.appendLog("NAV_TAP: seq=$seqNow text=${rec.text} score=${rec.score}")
                     updateDecisionButtons()
                 }
@@ -414,6 +472,8 @@ btnExport.setOnLongClickListener {
             try {
                 val arr = JSONArray(decodeJsResultToJson(json))
                 val list = mutableListOf<RecItem>()
+                val pageUrl = webView.url ?: ""
+                val pageTitle = try { webView.title ?: "" } catch (_: Throwable) { "" }
                 for (i in 0 until arr.length()) {
                     val o = arr.getJSONObject(i)
                     val tag = o.optString("tag", "")
@@ -422,8 +482,23 @@ btnExport.setOnLongClickListener {
                     val xpath = o.optString("xpath", "")
                     if (xpath.isBlank()) continue
                     val (score, hits) = scoreKeywords(text + " " + (href ?: ""))
-                    if (score <= 0) continue
 
+                    // Always write to rec_candidates (for replay / later pinning), even if score=0.
+                    appendJsonl(fileRecCandidates, JSONObject().apply {
+                        put("sid", sid)
+                        put("ts_ms", System.currentTimeMillis())
+                        put("type", "REC_CAND")
+                        put("url", pageUrl)
+                        put("title", pageTitle)
+                        put("tag", tag)
+                        put("text", text)
+                        put("href", href ?: JSONObject.NULL)
+                        put("xpath", xpath)
+                        put("score", score)
+                        put("kw", JSONArray(hits))
+                    })
+
+                    if (score <= 0) continue
                     list.add(RecItem(tag, text, href, xpath, score, hits))
                 }
 
@@ -550,6 +625,11 @@ btnExport.setOnLongClickListener {
             })
         }
         appendJsonl(filePins, o)
+        // human-confirmed xpath only
+        try {
+            logStore.appendLog(fileXpathLog, "${System.currentTimeMillis()}\t$pinId\t${trig.xpath}\n")
+        } catch (_: Throwable) {
+        }
         display.appendLog("PIN_ADD: $pinId")
         Toast.makeText(this, "PIN saved: $pinId", Toast.LENGTH_SHORT).show()
 
@@ -620,12 +700,8 @@ btnExport.setOnLongClickListener {
         try {
 			// NOTE: keep this as an escaped newline. Do NOT put a raw line break inside quotes.
 			val line = obj.toString() + "\\n"
-// internal + public (Download/Sbi/)
-            val key = fileName
-                .removeSuffix(".jsonl")
-                .removeSuffix(".txt")
-                .replace("/", "_")
-            logStore.appendJsonl(key, line)
+            // internal + public (Download/Sbi/<sid>/...)
+            logStore.appendJsonl(fileName, line)
         } catch (e: Exception) {
             display.appendLog("FILE: write failed $fileName : ${e.message}")
         }

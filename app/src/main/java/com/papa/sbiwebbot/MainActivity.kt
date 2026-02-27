@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/MainActivity.kt
-//ver 1.02-09
+//ver 1.02-10
 package com.papa.sbiwebbot
 
 import android.content.Intent

@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/Mail.kt
-//ver 1.01-00
+//ver 1.01-02
 package com.papa.sbiwebbot
 import org.json.JSONObject
 import java.util.*
@@ -11,7 +11,12 @@ data class EmailItem(
     val subject: String,
     val body: String,
     val date: String,
+    // JavaMailのDateは内部的に epoch(ms) なので、JST/UTCの表記差はここでは問題にならない
+    // 「送信日時が-9時間」等の誤差が出るケースを避けるため、received/sent の両方を持つ
     val sentTimeMs: Long,
+    val receivedTimeMs: Long,
+    // フィルタに使う代表時刻（received優先、なければsent）
+    val bestTimeMs: Long,
     val from: String
 )
 
@@ -46,9 +51,11 @@ class Mail {
                     val subj = MimeUtility.decodeText(m.subject ?: "")
                     val body = extractText(m) // 全文
                     val sentMs = m.sentDate?.time ?: 0L
-                    val date = m.sentDate?.toString() ?: ""
+                    val recvMs = m.receivedDate?.time ?: 0L
+                    val best = if (recvMs > 0L) recvMs else sentMs
+                    val date = (m.receivedDate ?: m.sentDate)?.toString() ?: ""
                     val from = try { MimeUtility.decodeText(m.from?.firstOrNull()?.toString() ?: "") } catch (_: Exception) { "" }
-                    list.add(EmailItem(subj, body, date, sentMs, from))
+                    list.add(EmailItem(subj, body, date, sentMs, recvMs, best, from))
                 }
 
                 inbox.close(false)

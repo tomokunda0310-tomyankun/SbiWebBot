@@ -1,19 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--app/src/main/res/layout/activity_main.xml-->
-<!--ver 1.01-00-->
+<!--ver 1.02-07-->
 <androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/root"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <!-- Top buttons -->
     <LinearLayout
         android:id="@+id/topBar"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:background="#EEE"
         android:orientation="horizontal"
+        android:padding="4dp"
+        android:background="#EEEEEE"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
@@ -25,160 +25,96 @@
             android:text="BACK" />
 
         <Button
-            android:id="@+id/btnPanel"
+            android:id="@+id/btnRec"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="PANEL" />
-
-        <!-- Main page switch -->
-        <Button
-            android:id="@+id/btnPageWeb"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="LOGIN" />
+            android:text="REC" />
 
         <Button
-            android:id="@+id/btnPageMail"
+            android:id="@+id/btnLog"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="MAIL" />
+            android:text="LOG" />
 
-        <!-- Web tab switch -->
-        <Button
-            android:id="@+id/btnWebMain"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="MAIN" />
+        <Space
+            android:layout_width="12dp"
+            android:layout_height="wrap_content" />
 
         <Button
-            android:id="@+id/btnWebAuth"
+            android:id="@+id/btnYahoo"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="AUTH" />
-    </LinearLayout>
+            android:text="Y!" />
 
-    <!-- auth code candidates bar (shown when candidates exist) -->
-    <HorizontalScrollView
-        android:id="@+id/codeScroll"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:background="#EEE"
-        android:fillViewport="true"
-        android:scrollbars="none"
-        android:visibility="gone"
-        app:layout_constraintTop_toBottomOf="@id/topBar"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent">
-
-        <LinearLayout
-            android:id="@+id/codeBar"
+        <Button
+            android:id="@+id/btnSbi"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:padding="4dp" />
-    </HorizontalScrollView>
+            android:text="SBI" />
 
-    <!-- Split position (drag handle moves this) -->
-    <androidx.constraintlayout.widget.Guideline
-        android:id="@+id/guideSplit"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        app:layout_constraintGuide_percent="0.58" />
+        <Space
+            android:layout_width="12dp"
+            android:layout_height="wrap_content" />
 
-    <!-- Main content area (LOGIN WebViews or MAIL list) -->
-    <FrameLayout
-        android:id="@+id/mainContent"
-        android:layout_width="0dp"
-        android:layout_height="0dp"
-        app:layout_constraintTop_toBottomOf="@id/codeScroll"
-        app:layout_constraintBottom_toTopOf="@id/splitHandle"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent">
+        <Button
+            android:id="@+id/btnNeed"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="必要" />
 
-        <!-- LOGIN area -->
-        <FrameLayout
-            android:id="@+id/webArea"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent">
-
-            <!-- MAIN WebView -->
-            <WebView
-                android:id="@+id/webViewMain"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent" />
-
-            <!-- AUTH WebView (device-auth URL) -->
-            <WebView
-                android:id="@+id/webViewAuth"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:visibility="gone" />
-        </FrameLayout>
-
-        <!-- MAIL area -->
-        <FrameLayout
-            android:id="@+id/mailArea"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:visibility="gone">
-
-            <ListView
-                android:id="@+id/lvMail"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent" />
-        </FrameLayout>
-    </FrameLayout>
-
-    <!-- Drag handle -->
-    <LinearLayout
-        android:id="@+id/splitHandle"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:background="#DDDDDD"
-        android:gravity="center"
-        android:orientation="vertical"
-        android:paddingTop="2dp"
-        android:paddingBottom="2dp"
-        app:layout_constraintTop_toTopOf="@id/guideSplit"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent">
-
-        <View
-            android:layout_width="48dp"
-            android:layout_height="4dp"
-            android:background="#888888" />
+        <Button
+            android:id="@+id/btnNope"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="不要" />
 
         <TextView
-            android:layout_width="wrap_content"
+            android:id="@+id/tvNavInfo"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:text="drag"
-            android:textSize="10sp" />
-
-        <!-- Slider: resize panel (0.15 - 0.95) -->
-        <SeekBar
-            android:id="@+id/seekSplit"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:max="100" />
+            android:layout_weight="1"
+            android:paddingStart="8dp"
+            android:paddingEnd="4dp"
+            android:text="EXPLORE"
+            android:textSize="12sp"
+            android:maxLines="2" />
     </LinearLayout>
 
-    <!-- Bottom panel (tabs + content). Height is adjustable by dragging the handle -->
-    <LinearLayout
-        android:id="@+id/panel"
+    <WebView
+        android:id="@+id/webView"
         android:layout_width="0dp"
         android:layout_height="0dp"
+        app:layout_constraintTop_toBottomOf="@id/topBar"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintBottom_toTopOf="@id/bottomPanel" />
+
+    <LinearLayout
+        android:id="@+id/bottomPanel"
+        android:layout_width="0dp"
+        android:layout_height="220dp"
         android:orientation="vertical"
-        app:layout_constraintTop_toBottomOf="@id/splitHandle"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
 
         <com.google.android.material.tabs.TabLayout
+            android:visibility="gone"
             android:id="@+id/tabLayout"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             app:tabMode="fixed" />
+
+        <TextView
+            android:id="@+id/tvHelp"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="#FFF3B0"
+            android:padding="8dp"
+            android:textSize="12sp"
+            android:textColor="#000000"
+            android:maxLines="6"
+            android:text="HELP" />
 
         <FrameLayout
             android:layout_width="match_parent"
@@ -194,58 +130,16 @@
                     android:id="@+id/tvLog"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:background="#000"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:fontFamily="monospace"
                     android:padding="8dp"
-                    android:textColor="#0F0" />
+                    android:textSize="12sp" />
             </ScrollView>
 
             <ListView
-                android:id="@+id/lvInspect"
+                android:id="@+id/lvRec"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:visibility="gone" />
-
-            <LinearLayout
-                android:id="@+id/layoutConfig"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:orientation="vertical"
-                android:padding="8dp"
-                android:visibility="gone">
-
-                <EditText
-                    android:id="@+id/etConfig"
-                    android:layout_width="match_parent"
-                    android:layout_height="0dp"
-                    android:layout_weight="1"
-                    android:fontFamily="monospace"
-                    android:gravity="top"
-                    android:inputType="textMultiLine" />
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content">
-
-                    <Button
-                        android:id="@+id/btnSaveConfig"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="SAVE" />
-
-                    <Button
-                        android:id="@+id/btnLoadConfig"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="LOAD" />
-                </LinearLayout>
-            </LinearLayout>
         </FrameLayout>
-
     </LinearLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout>

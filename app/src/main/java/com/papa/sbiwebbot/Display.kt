@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/Display.kt
-//ver 1.01-00
+//ver 1.02-05
 package com.papa.sbiwebbot
 import android.animation.ArgbEvaluator
 import android.animation.ValueAnimator
@@ -21,10 +21,14 @@ import com.google.android.material.tabs.TabLayout
 import java.text.SimpleDateFormat
 import java.util.*
 
-class Display(private val context: Context, private val tvLog: TextView, private val tabLayout: TabLayout) {
+class Display(private val context: Context, private val tvLog: TextView, private val tabLayout: TabLayout, private val logStore: LogStore? = null) {
     private val handler = Handler(Looper.getMainLooper())
     private val blinkingAnims = mutableMapOf<Int, ValueAnimator>()
-    private val appVersion = "1.01-00"
+    private val appVersion = "1.02-00"
+
+    // 操作ログをファイルへ保存（内部ストレージ）
+    // /data/data/<package>/files/oplog.txt
+    private val logFileName = "oplog.txt"
 
     init {
         tvLog.setOnClickListener {
@@ -36,8 +40,25 @@ class Display(private val context: Context, private val tvLog: TextView, private
 
     fun appendLog(msg: String) {
         val time = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
-        tvLog.post { tvLog.append("[$time] $msg\n") }
+        val line = "[$time] $msg\n"
+        tvLog.post { tvLog.append(line) }
+
+        // best-effort file append
+        try {
+            context.openFileOutput(logFileName, Context.MODE_APPEND).use { out ->
+                out.write(line.toByteArray(Charsets.UTF_8))
+            }
+        } catch (_: Throwable) {
+        }
+
+        // also write to public Downloads/Sbi/
+        try {
+            logStore?.appendOplog(line)
+        } catch (_: Throwable) {
+        }
     }
+
+    fun getLogFileName(): String = logFileName
 
     fun setTabState(index: Int, isBlinking: Boolean, colorHex: String) {
         handler.post {

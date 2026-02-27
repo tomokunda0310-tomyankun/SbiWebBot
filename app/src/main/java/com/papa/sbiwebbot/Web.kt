@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/Web.kt
-//ver 1.01-00
+//ver 1.01-02
 package com.papa.sbiwebbot
 
 import android.content.Context
@@ -130,6 +130,10 @@ class Web(private val webView: WebView, private val display: Display) {
 
                 // 解析は「未知サイト(=メールURL等)」のみ。
                 // 無限ループ防止のため、同一URLでの連続実行を抑制する。
+
+                // 画面内に表示された6桁(認証コード)を拾う（OTP/confirm 等）
+                webView.evaluateJavascript(WebScripts.authFromBodyScript(), null)
+
                 if (shouldInspect(url)) {
                     requestInspect(reason = "pageFinished")
                 }

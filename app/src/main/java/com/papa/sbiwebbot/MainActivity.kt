@@ -1,8 +1,9 @@
 //app/src/main/java/com/papa/sbiwebbot/MainActivity.kt
-//ver 1.02-27
+//ver 1.02-33
 package com.papa.sbiwebbot
 
 import android.content.Intent
+import android.content.SharedPreferences
 import android.os.Bundle
 import android.net.Uri
 import android.view.View
@@ -47,7 +48,7 @@ class MainActivity : AppCompatActivity() {
 
 
     // ==== Explore state ====
-    private val appVersion = "1.02-27"
+    private val appVersion = "1.02-33"
     private val sid: String by lazy {
         SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
     }
@@ -112,6 +113,18 @@ class MainActivity : AppCompatActivity() {
     // SBI login entry (OTP mail)
     private val URL_SBI_LOGIN_ENTRY = "https://login.sbisec.co.jp/login/entry?cccid=main-site-user"
 
+
+    // ===== Login Auto (best-effort) =====
+    private enum class LoginAutoState { NONE, WANT_LOGIN, WAIT_OTP_SEND }
+    private var loginAutoState: LoginAutoState = LoginAutoState.NONE
+    private var loginAutoStartedAtMs: Long = 0
+    private var loginFillAttempts: Int = 0
+    private val loginPrefs: SharedPreferences by lazy { getSharedPreferences("sbi_login", MODE_PRIVATE) }
+    private fun getSavedUser(): String = loginPrefs.getString("user", "") ?: ""
+    private fun getSavedPass(): String = loginPrefs.getString("pass", "") ?: ""
+    private fun saveUserPass(u: String, p: String) { loginPrefs.edit().putString("user", u).putString("pass", p).apply() }
+
+
     private fun nextSeq(): Long {
         seq += 1
         return seq
@@ -141,6 +154,35 @@ class MainActivity : AppCompatActivity() {
 
         // Crash log -> Download/Sbi/<sid>/log/crash.txt
         installCrashHandler()
+
+        // Load saved credentials from encrypted config (best-effort).
+        // Accept JSON like {"user":"...","pass":"..."} or lines like user=... / pass=...
+        try {
+            if (getSavedUser().isBlank() || getSavedPass().isBlank()) {
+                val raw = Config(this).loadDecrypted()
+                if (!raw.isNullOrBlank()) {
+                    var u = ""
+                    var p = ""
+                    try {
+                        val jo = JSONObject(raw)
+                        u = jo.optString("user", "")
+                        p = jo.optString("pass", "")
+                    } catch (_: Throwable) {
+                        // fallback: key=value lines
+                        val mu = Regex("(?i)user\\s*[:=]\\s*([^\\s]+)").find(raw)
+                        val mp = Regex("(?i)pass(word)?\\s*[:=]\\s*([^\\s]+)").find(raw)
+                        u = mu?.groupValues?.getOrNull(1) ?: ""
+                        p = mp?.groupValues?.getOrNull(2) ?: ""
+                    }
+                    if (u.isNotBlank() && p.isNotBlank()) {
+                        saveUserPass(u, p)
+                        display.appendLog("LOGIN: loaded user/pass from config")
+                    }
+                }
+            }
+        } catch (_: Throwable) {
+        }
+
 
         // Sref snapshot (replay seeds) - keep it simple and reproducible.
         // NOTE: do NOT hard-fix tracking/time params here (only keep in comments/log).
@@ -204,21 +246,18 @@ pickLogDirLauncher = registerForActivityResult(ActivityResultContracts.OpenDocum
         }
         btnLog.setOnClickListener {
             AlertDialog.Builder(this)
-                .setTitle("LOG / PIN")
-                .setItems(arrayOf("ログ表示(画面)", "ログ一覧", "PIN一覧")) { _, which ->
+                .setTitle("LOG")
+                .setItems(arrayOf("ログ表示(画面)", "ログをコピー", "PIN一覧(画面に表示)")) { _, which ->
                     when (which) {
-                        0 -> showLogPanel()
+                        0 -> {
+                            showLogPanel()
+                            display.appendLog("UI: show log")
+                        }
                         1 -> {
-                            val it = Intent(this, LogViewerActivity::class.java)
-                            it.putExtra(LogViewerActivity.EXTRA_SID, sid)
-                            it.putExtra(LogViewerActivity.EXTRA_MODE, "logs")
-                            startActivity(it)
+                            copyLogToClipboard()
                         }
                         2 -> {
-                            val it = Intent(this, LogViewerActivity::class.java)
-                            it.putExtra(LogViewerActivity.EXTRA_SID, sid)
-                            it.putExtra(LogViewerActivity.EXTRA_MODE, "pins")
-                            startActivity(it)
+                            showPinsInLog()
                         }
                     }
                 }
@@ -604,7 +643,26 @@ override fun onPageFinished(view: WebView?, url: String?) {
                 } catch (_: Throwable) {
                 }
 
-                // AUTO crawl hook
+                
+
+                // LOGIN auto hook (when login page is opened/redirected)
+                try {
+                    if (u.contains("login.sbisec.co.jp")) {
+                        val hasCred = getSavedUser().isNotBlank() && getSavedPass().isNotBlank()
+                        if (loginAutoState == LoginAutoState.NONE && hasCred) {
+                            // auto start when redirected to login
+                            loginAutoState = LoginAutoState.WANT_LOGIN
+                            loginAutoStartedAtMs = System.currentTimeMillis()
+                            display.appendLog("LOGIN: auto detected login page -> start fill")
+                        }
+                        // give DOM a moment to render
+                        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                            tryAutoLoginFlow(u)
+                        }, 350)
+                    }
+                } catch (_: Throwable) {
+                }
+// AUTO crawl hook
                 try {
                     autoOnPageFinished(u)
                 } catch (_: Throwable) {
@@ -900,6 +958,10 @@ private fun handleNonHttpScheme(url: String): Boolean {
     }
 
 private fun startAutoSbiRanking() {
+        if (autoMode != AutoMode.NONE) {
+            display.appendLog("AUTO: already running -> skip")
+            return
+        }
         try { Toast.makeText(this, "AUTO開始: SBIランキング", Toast.LENGTH_SHORT).show() } catch (_: Throwable) {}
         display.appendLog("AUTO: start SBI ranking crawl")
         autoMode = AutoMode.SBI_RANKING
@@ -920,7 +982,7 @@ private fun startAutoSbiRanking() {
 
         // always snapshot
         autoBusy = true
-        captureCurrentPage("auto") {
+        captureCurrentPage("auto", urlOverride = url) {
             try {
                 autoBusy = false
                 if (autoMode != AutoMode.SBI_RANKING) return@captureCurrentPage
@@ -935,7 +997,9 @@ private fun startAutoSbiRanking() {
                 // 1) if queue not built yet and we are on ranking page => build queue
                 // v1.02-27: JS抽出が端末差で空になることがあるため、outerHTML を Kotlin 側で正規表現解析してキュー生成（最も安定）
                 if (autoQueue.isEmpty() && url.contains("cat2=ranking")) {
-                    webView.evaluateJavascript(WebScripts.outerHtmlScript()) { rawHtml ->
+                    // Delay a bit to allow dynamic table to render on some devices
+                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                        webView.evaluateJavascript(WebScripts.outerHtmlScript()) { rawHtml ->
                         try {
                             val html = decodeJsResultToJson(rawHtml)
                                 .replace("&amp;", "&")
@@ -957,6 +1021,7 @@ private fun startAutoSbiRanking() {
                             display.appendLog("AUTO: extract failed: ${t.javaClass.simpleName}")
                         }
                     }
+                    }, 950)
                     return@captureCurrentPage
                 }
 
@@ -1081,6 +1146,8 @@ private fun startAutoSbiRanking() {
     }
 
 private fun isSbiStockDetailUrl(url: String): Boolean {
+        // Note: PTS pages also include i_stock_sec / stock_sec_code_mul, so exclude them first.
+        if (isSbiPtsUrl(url)) return false
         // no-login stock detail pages often use stock_sec_code_mul / i_stock_sec, not stock_sec_code=
         return url.contains("_ActionID=stockDetail") ||
             url.contains("WPLETsiR001Idtl10") ||
@@ -1148,8 +1215,9 @@ private fun isSbiStockDetailUrl(url: String): Boolean {
         return "other"
     }
 
-    private fun captureCurrentPage(tag: String, onDone: (() -> Unit)? = null) {
-        val url = webView.url ?: ""
+    // Put onDone as the LAST parameter so we can use trailing lambda safely.
+    private fun captureCurrentPage(tag: String, urlOverride: String? = null, onDone: (() -> Unit)? = null) {
+        val url = urlOverride ?: (webView.url ?: "")
         val title = try { webView.title ?: "" } catch (_: Throwable) { "" }
         val pageType = detectPageType(url)
         val source = detectSource(url)
@@ -1203,6 +1271,37 @@ private fun isSbiStockDetailUrl(url: String): Boolean {
         }
     }
 
+    
+
+    private fun copyLogToClipboard() {
+        try {
+            val s = tvLog.text?.toString() ?: ""
+            val cm = getSystemService(CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+            if (cm != null) {
+                cm.setPrimaryClip(android.content.ClipData.newPlainText("SbiWebBotLog", s))
+                Toast.makeText(this, "ログをクリップボードにコピーしました", Toast.LENGTH_SHORT).show()
+                display.appendLog("LOG: copied to clipboard (${s.length} chars)")
+            } else {
+                Toast.makeText(this, "Clipboardが使えません", Toast.LENGTH_SHORT).show()
+                display.appendLog("LOG: clipboard unavailable")
+            }
+        } catch (t: Throwable) {
+            Toast.makeText(this, "コピー失敗", Toast.LENGTH_SHORT).show()
+            display.appendLog("LOG: copy failed (${t.javaClass.simpleName})")
+        }
+    }
+
+    private fun showPinsInLog() {
+        try {
+            showLogPanel()
+            val pins = logStore.readTextOrNull("pins/pins.jsonl") ?: ""
+            val head = "=== pins/pins.jsonl ===\n"
+            tvLog.text = head + pins
+            display.appendLog("PIN: show list (${pins.length} chars)")
+        } catch (t: Throwable) {
+            display.appendLog("PIN: show failed (${t.javaClass.simpleName})")
+        }
+    }
     private fun showSbiMenuWithAuto() {
         display.appendLog("UI: show SBI menu")
         val items = arrayOf(
@@ -1211,7 +1310,8 @@ private fun isSbiStockDetailUrl(url: String): Boolean {
             "値下がり率 (SBI)",
             "出来高上位 (SBI)",
             "売買代金上位 (SBI)",
-            "ログイン画面(OTP) を開く",
+            "ログイン設定(ユーザ/パス保存)",
+            "ログイン自動(ユーザ/パス入力→ログイン)",
             "OTP送信ボタン(自動) + 20秒待ち",
             "クリップボードのURLを開く",
             "クリップボードの認証コードを入力 + 認証ボタン"
@@ -1230,19 +1330,128 @@ private fun isSbiStockDetailUrl(url: String): Boolean {
                         webView.loadUrl(URL_SBI_LOGIN_ENTRY)
                     }
                     6 -> {
+                        startLoginAuto()
+                    }
+                    7 -> {
                         display.appendLog("LOGIN: try click OTP send + wait 20s")
                         tryClickOtpSendAndWait()
                     }
-                    7 -> openClipboardUrl()
-                    8 -> fillOtpFromClipboardAndSubmit()
+                    8 -> openClipboardUrl()
+                    9 -> fillOtpFromClipboardAndSubmit()
                 }
             }
             .setNegativeButton("Cancel", null)
             .show()
     }
 
+    private fun startLoginAuto() {
+        val u = getSavedUser()
+        val p = getSavedPass()
+        if (u.isBlank() || p.isBlank()) {
+            display.appendLog("LOGIN: missing user/pass -> open settings")
+            Toast.makeText(this, "SBIログイン設定（ユーザ/パス）を保存してね", Toast.LENGTH_LONG).show()
+            showLoginSettingsDialog()
+            return
+        }
+
+        loginAutoState = LoginAutoState.WANT_LOGIN
+        loginAutoStartedAtMs = System.currentTimeMillis()
+        display.appendLog("LOGIN: start auto fill (state=WANT_LOGIN)")
+
+        val cur = webView.url ?: ""
+        if (cur.contains("login.sbisec.co.jp")) {
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                tryAutoLoginFlow(cur)
+            }, 350)
+        } else {
+            webView.loadUrl(URL_SBI_LOGIN_ENTRY)
+        }
+    }
+
 
     // ===== LOGIN helper (OTP) =====
+
+    private fun showLoginSettingsDialog() {
+        val v = layoutInflater.inflate(R.layout.dialog_login_settings, null)
+        val etUser = v.findViewById<EditText>(R.id.etUser)
+        val etPass = v.findViewById<EditText>(R.id.etPass)
+        etUser.setText(getSavedUser())
+        etPass.setText(getSavedPass())
+
+        AlertDialog.Builder(this)
+            .setTitle("SBIログイン設定（端末内保存）")
+            .setView(v)
+            .setPositiveButton("保存") { _, _ ->
+                saveUserPass(etUser.text?.toString()?.trim() ?: "", etPass.text?.toString() ?: "")
+                Toast.makeText(this, "保存しました", Toast.LENGTH_SHORT).show()
+                display.appendLog("LOGIN: settings saved")
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun tryAutoLoginFlow(url: String) {
+        // Timeout safety
+        if (loginAutoState != LoginAutoState.NONE && (System.currentTimeMillis() - loginAutoStartedAtMs) > 120_000) {
+            display.appendLog("LOGIN: auto timeout -> stop")
+            loginAutoState = LoginAutoState.NONE
+            return
+        }
+
+        if (!url.contains("login.sbisec.co.jp")) return
+
+        when (loginAutoState) {
+            LoginAutoState.WANT_LOGIN -> {
+                val u = getSavedUser()
+                val p = getSavedPass()
+                if (u.isBlank() || p.isBlank()) {
+                    display.appendLog("LOGIN: missing user/pass -> open settings")
+                    Toast.makeText(this, "SBIログイン設定（ユーザ/パス）を保存してね", Toast.LENGTH_LONG).show()
+                    loginAutoState = LoginAutoState.NONE
+                    return
+                }
+                // Fill and click login button (retry because DOM may not be ready)
+                loginFillAttempts++
+                val js = WebScripts.fillLoginAndSubmitScript(u, p)
+                webView.evaluateJavascript(js) { raw ->
+                    val rr = try {
+                        val s = decodeJsResultToJson(raw)
+                        JSONObject(s)
+                    } catch (_: Throwable) {
+                        null
+                    }
+                    val userFound = rr?.optBoolean("userFound", false) ?: false
+                    val passFound = rr?.optBoolean("passFound", false) ?: false
+                    val clicked = rr?.optBoolean("clicked", false) ?: false
+                    display.appendLog("LOGIN: fill+login attempt=$loginFillAttempts user=$userFound pass=$passFound clicked=$clicked")
+
+                    if (clicked) {
+                        // After clicking login, next page may be OTP send page (still login.sbisec)
+                        loginAutoState = LoginAutoState.WAIT_OTP_SEND
+                        loginFillAttempts = 0
+                        return@evaluateJavascript
+                    }
+
+                    if (loginFillAttempts < 5) {
+                        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                            tryAutoLoginFlow(webView.url ?: url)
+                        }, 800)
+                    } else {
+                        display.appendLog("LOGIN: fill+login give up (no login button click)")
+                        loginAutoState = LoginAutoState.NONE
+                        loginFillAttempts = 0
+                    }
+                }
+            }
+            LoginAutoState.WAIT_OTP_SEND -> {
+                // Try click send button on OTP screen (if exists). If not found, keep waiting (user may be on intermediate page).
+                tryClickOtpSendAndWait()
+            }
+            else -> {}
+        }
+    }
+
+
 
     private fun openClipboardUrl() {
         val cm = getSystemService(CLIPBOARD_SERVICE) as? android.content.ClipboardManager
@@ -1261,22 +1470,33 @@ private fun isSbiStockDetailUrl(url: String): Boolean {
     private fun tryClickOtpSendAndWait() {
         val js = """(function(){
               try{
-                function norm(s){ return (s||'').replace(/\s+/g,' ').trim(); }
-                function containsText(el, t){
-                  try{
-                    var s = norm(el.innerText||el.textContent||'') + ' ' + norm(el.value||'') + ' ' + norm(el.getAttribute('aria-label')||'');
-                    return s.indexOf(t)>=0;
-                  }catch(e){ return false; }
+                // guard: avoid clicking unrelated items (e.g., "Eメール通知サービス") on non-OTP pages
+                var bodyText = (document.body && (document.body.innerText||document.body.textContent)) || '';
+                if(!/(認証コード|ワンタイム|OTP|オー?ティー?ピー?|認証番号|二要素|二段階)/.test(bodyText)){
+                  return 'not_otp_page';
                 }
-                var btns = document.querySelectorAll('button,input[type=button],input[type=submit],a[role=button]');
+
+                function norm(s){ return (s||'').replace(/\s+/g,' ').trim(); }
+                function textOf(el){
+                  try{ return norm((el.innerText||el.textContent||'') + ' ' + (el.value||'') + ' ' + (el.getAttribute('aria-label')||'')); }
+                  catch(e){ return ''; }
+                }
+
+                var btns = document.querySelectorAll('button,input[type=button],input[type=submit],input[type=image],a,a[role=button],div[role=button],span[role=button]');
+                var candidates = [];
                 for(var i=0;i<btns.length;i++){
                   var el = btns[i];
-                  if(containsText(el,'送信') || containsText(el,'メール') || containsText(el,'認証コード')){
-                    el.click();
-                    return 'clicked';
+                  var s = textOf(el);
+                  // require: "送信" AND ("認証" OR "OTP" OR "コード")
+                  if(s.indexOf('送信')>=0 && (s.indexOf('認証')>=0 || s.indexOf('OTP')>=0 || s.indexOf('コード')>=0)){
+                    candidates.push({el:el, t:s});
                   }
                 }
-                return 'notfound';
+                if(candidates.length===0){
+                  return 'notfound';
+                }
+                candidates[0].el.click();
+                return 'clicked';
               }catch(e){ return 'error'; }
             })();""".trimIndent()
 
@@ -1288,10 +1508,18 @@ private fun isSbiStockDetailUrl(url: String): Boolean {
                 android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
                     Toast.makeText(this, "20秒経過。認証コードを貼り付けて認証ボタンを押してね。", Toast.LENGTH_LONG).show()
                     display.appendLog("LOGIN: wait done")
+                    loginAutoState = LoginAutoState.NONE
                 }, 20_000)
-            } else {
+            } else if (r.contains("not_otp_page")) {
+                // not OTP page yet
+                Toast.makeText(this, "OTP送信ページではない（まだログイン途中）", Toast.LENGTH_SHORT).show()
+                display.appendLog("LOGIN: otp_send skipped (not_otp_page)")
+            } else if (r.contains("notfound")) {
                 Toast.makeText(this, "OTP送信ボタンが見つからない", Toast.LENGTH_SHORT).show()
                 display.appendLog("LOGIN: otp_send notfound")
+            } else {
+                Toast.makeText(this, "OTP送信でエラー", Toast.LENGTH_SHORT).show()
+                display.appendLog("LOGIN: otp_send error")
             }
         }
     }

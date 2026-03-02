@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/WebScripts.kt
-//ver 1.02-25
+//ver 1.02-32
 package com.papa.sbiwebbot
 
 object WebScripts {
@@ -381,4 +381,77 @@ object WebScripts {
 
     /** Capture body innerText (for snippet). returns string */
     fun bodyTextScript(): String = "(function(){try{return document.body? (document.body.innerText||'') : '';}catch(e){return '';} })();"
+
+
+    fun fillLoginAndSubmitScript(user: String, pass: String): String {
+        // Best-effort: find username/password inputs and click a login button.
+        // SBI pages vary (and may A/B test), so keep heuristics broad.
+        val u = user.replace("\\", "\\\\").replace("'", "\\'")
+        val p = pass.replace("\\", "\\\\").replace("'", "\\'")
+        return """(function(){
+            try{
+              var USER = '$u';
+              var PASS = '$p';
+              function norm(s){ return (s||'').replace(/\s+/g,' ').trim().toLowerCase(); }
+              function setVal(el, v){
+                try{
+                  el.focus();
+                  el.value = v;
+                  el.dispatchEvent(new Event('input', {bubbles:true}));
+                  el.dispatchEvent(new Event('change', {bubbles:true}));
+                  el.blur();
+                }catch(e){}
+              }
+              function scoreUser(el){
+                var a = norm(el.getAttribute('id')) + ' ' + norm(el.getAttribute('name')) + ' ' + norm(el.getAttribute('placeholder')) + ' ' + norm(el.getAttribute('aria-label'));
+                var t = norm(el.getAttribute('type'));
+                var s = 0;
+                if (t==='text' || t==='email' || t==='tel' || t==='' ) s += 1;
+                if (a.indexOf('user')>=0 || a.indexOf('login')>=0 || a.indexOf('id')>=0 || a.indexOf('account')>=0) s += 3;
+                if (a.indexOf('ユーザ')>=0 || a.indexOf('ﾕｰｻﾞ')>=0 || a.indexOf('ユーザー')>=0) s += 4;
+                if (a.indexOf('pass')>=0 || t==='password') s -= 5;
+                return s;
+              }
+              function scorePass(el){
+                var a = norm(el.getAttribute('id')) + ' ' + norm(el.getAttribute('name')) + ' ' + norm(el.getAttribute('placeholder')) + ' ' + norm(el.getAttribute('aria-label'));
+                var t = norm(el.getAttribute('type'));
+                var s = 0;
+                if (t==='password') s += 6;
+                if (a.indexOf('pass')>=0) s += 5;
+                if (a.indexOf('password')>=0) s += 5;
+                if (a.indexOf('ログイン')>=0) s += 1;
+                return s;
+              }
+              var inputs = Array.prototype.slice.call(document.querySelectorAll('input'));
+              var userEl = null, passEl = null, bestU=-999, bestP=-999;
+              for (var i=0;i<inputs.length;i++){
+                var el = inputs[i];
+                var su = scoreUser(el);
+                if (su>bestU){ bestU=su; userEl=el; }
+                var sp = scorePass(el);
+                if (sp>bestP){ bestP=sp; passEl=el; }
+              }
+              if (userEl) setVal(userEl, USER);
+              if (passEl) setVal(passEl, PASS);
+
+              // Click a login button
+              function textOf(el){
+                return norm(el.innerText||el.textContent||el.value||el.getAttribute('aria-label')||'');
+              }
+              var btns = Array.prototype.slice.call(document.querySelectorAll('button,input[type=submit],input[type=button],a[role=button]'));
+              var clicked = false;
+              for (var j=0;j<btns.length;j++){
+                var b = btns[j];
+                var t = textOf(b);
+                if (t.indexOf('ログイン')>=0){
+                  try{ b.click(); clicked=true; break; }catch(e){}
+                }
+              }
+              return JSON.stringify({ok:true, userFound:!!userEl, passFound:!!passEl, clicked:clicked, bestU:bestU, bestP:bestP});
+            }catch(e){
+              return JSON.stringify({ok:false, err:String(e)});
+            }
+          })();"""
+    }
+
 }

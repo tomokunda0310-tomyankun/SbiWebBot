@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/LogStore.kt
-//ver 1.02-12
+//ver 1.02-33
 package com.papa.sbiwebbot
 
 import android.content.ContentValues
@@ -288,4 +288,18 @@ class LogStore(
     }
 
     fun getLastPublicError(): String = lastPublicError
+
+    /**
+     * Read internal text for UI preview (best-effort).
+     * NOTE: Public (Download/Sbi) read is intentionally NOT done here to avoid provider differences.
+     */
+    fun readTextOrNull(relPath: String): String? {
+        return try {
+            val f = internalFile(relPath)
+            if (!f.exists()) return null
+            f.readText(Charsets.UTF_8)
+        } catch (_: Throwable) {
+            null
+        }
+    }
 }

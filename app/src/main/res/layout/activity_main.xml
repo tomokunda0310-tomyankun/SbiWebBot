@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--app/src/main/res/layout/activity_main.xml-->
-<!--ver 1.02-20-->
+<!--ver 1.02-32-->
 <androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/root"
@@ -27,50 +27,50 @@
             <Button
                 android:id="@+id/btnBack"
                 android:layout_width="0dp"
-                android:layout_height="26dp"
+                android:layout_height="30dp"
                 android:layout_weight="1"
                 android:text="BACK"
-                android:textSize="9sp" />
+                android:textSize="6sp" />
 
             <Button
                 android:id="@+id/btnRec"
                 android:layout_width="0dp"
-                android:layout_height="26dp"
+                android:layout_height="30dp"
                 android:layout_weight="1"
                 android:text="REC"
-                android:textSize="9sp" />
+                android:textSize="6sp" />
 
             <Button
                 android:id="@+id/btnLog"
                 android:layout_width="0dp"
-                android:layout_height="26dp"
+                android:layout_height="30dp"
                 android:layout_weight="1"
                 android:text="LOG"
-                android:textSize="9sp" />
+                android:textSize="6sp" />
 
             <Button
                 android:id="@+id/btnYahoo"
                 android:layout_width="0dp"
-                android:layout_height="26dp"
+                android:layout_height="30dp"
                 android:layout_weight="1"
                 android:text="Y!"
-                android:textSize="9sp" />
+                android:textSize="6sp" />
 
             <Button
                 android:id="@+id/btnSbi"
                 android:layout_width="0dp"
-                android:layout_height="26dp"
+                android:layout_height="30dp"
                 android:layout_weight="1"
                 android:text="S!"
-                android:textSize="9sp" />
+                android:textSize="6sp" />
 
             <Button
                 android:id="@+id/btnExport"
                 android:layout_width="0dp"
-                android:layout_height="26dp"
+                android:layout_height="30dp"
                 android:layout_weight="1"
                 android:text="EXP"
-                android:textSize="9sp" />
+                android:textSize="6sp" />
 
         </LinearLayout>
 
@@ -84,18 +84,18 @@
             <Button
                 android:id="@+id/btnNeed"
                 android:layout_width="0dp"
-                android:layout_height="26dp"
+                android:layout_height="30dp"
                 android:layout_weight="1"
                 android:text="必要"
-                android:textSize="9sp" />
+                android:textSize="6sp" />
 
             <Button
                 android:id="@+id/btnNope"
                 android:layout_width="0dp"
-                android:layout_height="26dp"
+                android:layout_height="30dp"
                 android:layout_weight="1"
                 android:text="不要"
-                android:textSize="9sp" />
+                android:textSize="6sp" />
 
             <TextView
                 android:id="@+id/tvNavInfo"
@@ -105,7 +105,7 @@
                 android:paddingStart="8dp"
                 android:paddingEnd="4dp"
                 android:text="EXPLORE"
-                android:textSize="9sp"
+                android:textSize="6sp"
                 android:maxLines="2" />
         </LinearLayout>
     </LinearLayout>
@@ -150,6 +150,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:padding="8dp"
+                    android:textIsSelectable="true"
                     android:textSize="10sp" />
             </ScrollView>
 

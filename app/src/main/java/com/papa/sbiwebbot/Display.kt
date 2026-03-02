@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/Display.kt
-//ver 1.02-10
+//ver 1.02-33
 package com.papa.sbiwebbot
 import android.animation.ArgbEvaluator
 import android.animation.ValueAnimator
@@ -24,7 +24,7 @@ import java.util.*
 class Display(private val context: Context, private val tvLog: TextView, private val tabLayout: TabLayout, private val logStore: LogStore? = null) {
     private val handler = Handler(Looper.getMainLooper())
     private val blinkingAnims = mutableMapOf<Int, ValueAnimator>()
-    private val appVersion = "1.02-10"
+    private val appVersion = "1.02-33"
 
     // 操作ログをファイルへ保存（内部ストレージ）
     // /data/data/<package>/files/oplog.txt

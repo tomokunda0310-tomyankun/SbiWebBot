@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/SbiSref.kt
-//ver 1.02-10
+//ver 1.02-32
 package com.papa.sbiwebbot
 
 /**

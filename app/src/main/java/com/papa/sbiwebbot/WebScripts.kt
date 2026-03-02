@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/WebScripts.kt
-//ver 1.02-23
+//ver 1.02-25
 package com.papa.sbiwebbot
 
 object WebScripts {

@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/MainActivity.kt
-//ver 1.02-23
+//ver 1.02-27
 package com.papa.sbiwebbot
 
 import android.content.Intent
@@ -47,7 +47,7 @@ class MainActivity : AppCompatActivity() {
 
 
     // ==== Explore state ====
-    private val appVersion = "1.02-23"
+    private val appVersion = "1.02-27"
     private val sid: String by lazy {
         SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
     }
@@ -86,6 +86,9 @@ class MainActivity : AppCompatActivity() {
     private var autoBusy: Boolean = false
     private var autoCurrentCode: String? = null
     private val autoMaxSteps: Int = 25
+    private var autoLastLoadUrl: String? = null
+    private var autoLastLoadAtMs: Long = 0
+
     // Files (fixed folder structure)
     private val fileTry = "log/nav_try" // .jsonl will be appended
     private val filePins = "pins/pins"  // .jsonl
@@ -105,6 +108,9 @@ class MainActivity : AppCompatActivity() {
     private val URL_SBI_TURNOVER_T1 = "https://www.sbisec.co.jp/ETGate/?OutSide=on&_ActionID=DefaultAID&_ControlID=WPLETmgR001Control&_DataStoreID=DSWPLETmgR001Control&_PageID=WPLETmgR001Mdtl20&burl=iris_ranking&cat1=market&cat2=ranking&dir=tl1-rnk%7Ctl2-stock%7Ctl3-turnover%7Ctl4-high%7Ctl5-priceview%7Ctl7-T1&file=index.html&getFlg=on"
     // 売買代金上位(東証プライム)
     private val URL_SBI_SALESVAL_T1 = "https://www.sbisec.co.jp/ETGate/?OutSide=on&_ActionID=DefaultAID&_ControlID=WPLETmgR001Control&_DataStoreID=DSWPLETmgR001Control&_PageID=WPLETmgR001Mdtl20&burl=iris_ranking&cat1=market&cat2=ranking&dir=tl1-rnk%7Ctl2-stock%7Ctl3-salesval%7Ctl4-high%7Ctl5-priceview%7Ctl7-T1&file=index.html&getFlg=on"
+
+    // SBI login entry (OTP mail)
+    private val URL_SBI_LOGIN_ENTRY = "https://login.sbisec.co.jp/login/entry?cccid=main-site-user"
 
     private fun nextSeq(): Long {
         seq += 1
@@ -150,6 +156,8 @@ class MainActivity : AppCompatActivity() {
             sb.append("URL_SBI_DOWNRATE_T1=").append(URL_SBI_DOWNRATE_T1).append("\n")
             sb.append("URL_SBI_TURNOVER_T1=").append(URL_SBI_TURNOVER_T1).append("\n")
             sb.append("URL_SBI_SALESVAL_T1=").append(URL_SBI_SALESVAL_T1).append("\n")
+            sb.append("\n# Login\n")
+            sb.append("URL_SBI_LOGIN_ENTRY=").append(URL_SBI_LOGIN_ENTRY).append("\n")
             sb.append("\n# NOTE\n")
             sb.append("- _gl/_ga 等のトラッキング系や日付時刻パラメータは固定化しない（ログに残すのみ）\n")
             logStore.writeText("log/sref.log", "text/plain", sb.toString())
@@ -877,7 +885,21 @@ private fun handleNonHttpScheme(url: String): Boolean {
         captureCurrentPage("auto")
     }
 
-    private fun startAutoSbiRanking() {
+    
+    private fun autoLoadUrlOnce(url: String, reason: String) {
+        val now = System.currentTimeMillis()
+        val prev = autoLastLoadUrl
+        if (prev == url && (now - autoLastLoadAtMs) < 1200) {
+            display.appendLog("AUTO: skip duplicate load")
+            return
+        }
+        autoLastLoadUrl = url
+        autoLastLoadAtMs = now
+        display.appendLog(reason)
+        webView.loadUrl(url)
+    }
+
+private fun startAutoSbiRanking() {
         try { Toast.makeText(this, "AUTO開始: SBIランキング", Toast.LENGTH_SHORT).show() } catch (_: Throwable) {}
         display.appendLog("AUTO: start SBI ranking crawl")
         autoMode = AutoMode.SBI_RANKING
@@ -888,7 +910,7 @@ private fun handleNonHttpScheme(url: String): Boolean {
 
         val url = webView.url ?: ""
         if (!url.contains("sbisec.co.jp") || !url.contains("cat2=ranking")) {
-            webView.loadUrl(URL_SBI_UPRATE_T1)
+            autoLoadUrlOnce(URL_SBI_UPRATE_T1, "AUTO: open ranking")
         }
     }
 
@@ -911,24 +933,23 @@ private fun handleNonHttpScheme(url: String): Boolean {
                     return@captureCurrentPage
                 }
                 // 1) if queue not built yet and we are on ranking page => build queue
+                // v1.02-27: JS抽出が端末差で空になることがあるため、outerHTML を Kotlin 側で正規表現解析してキュー生成（最も安定）
                 if (autoQueue.isEmpty() && url.contains("cat2=ranking")) {
-                    val js = WebScripts.extractSbiStockLinksScript(limit = 8)
-                    webView.evaluateJavascript(js) { raw ->
+                    webView.evaluateJavascript(WebScripts.outerHtmlScript()) { rawHtml ->
                         try {
-                            val s = decodeJsResultToJson(raw)
-                            val arr = JSONArray(s)
-                            for (i in 0 until arr.length()) {
-                                val o = arr.getJSONObject(i)
-                                val u = o.optString("url", "")
-                                val code = o.optString("code", "").ifBlank { null }
-                                if (u.isBlank()) continue
-                                autoQueue.add(AutoStep(url = u, pageType = "stock", code = code))
+                            val html = decodeJsResultToJson(rawHtml)
+                                .replace("&amp;", "&")
+                                .replace("&#38;", "&")
+
+                            val links = extractSbiStockLinksFromHtml(html, limit = 8)
+                            for (it in links) {
+                                autoQueue.add(AutoStep(url = it.first, pageType = "stock", code = it.second))
                             }
                             display.appendLog("AUTO: queue=${autoQueue.size}")
                             if (autoQueue.isNotEmpty()) {
                                 autoIndex = 0
                                 autoCurrentCode = autoQueue[0].code
-                                webView.loadUrl(autoQueue[0].url)
+                                autoLoadUrlOnce(autoQueue[0].url, "AUTO: open stock")
                             } else {
                                 display.appendLog("AUTO: no stock links found")
                             }
@@ -939,17 +960,25 @@ private fun handleNonHttpScheme(url: String): Boolean {
                     return@captureCurrentPage
                 }
 
-                // 2) if current looks like stock page => try PTS
+                // 2) if current looks like PTS page => next
+                if (isSbiPtsUrl(url)) {
+                    autoGoNextStock()
+                    return@captureCurrentPage
+                }
+
+                // 3) if current looks like stock page => try PTS
                 if (isSbiStockDetailUrl(url)) {
                     val code = extractCodeFromUrl(url)
                     if (!code.isNullOrBlank()) autoCurrentCode = code
                     val jsPts = WebScripts.findPtsLinkScript()
                     webView.evaluateJavascript(jsPts) { raw ->
                         val s = decodeJsResultToJson(raw)
-                        val ptsUrl = s.trim().trim('"')
-                        if (ptsUrl.isNotBlank()) {
-                            display.appendLog("AUTO: open PTS")
-                            webView.loadUrl(ptsUrl)
+                        val ptsUrlRaw = s.trim().trim('"')
+                        val currentClean = url.trim().removeSuffix("#")
+                        val ptsClean = ptsUrlRaw.trim().removeSuffix("#")
+
+                        if (ptsClean.isNotBlank() && ptsClean != currentClean && !isSbiPtsUrl(currentClean)) {
+                            autoLoadUrlOnce(ptsClean, "AUTO: open PTS")
                         } else {
                             autoGoNextStock()
                         }
@@ -957,13 +986,7 @@ private fun handleNonHttpScheme(url: String): Boolean {
                     return@captureCurrentPage
                 }
 
-                // 3) if current looks like PTS page => next
-                if (url.contains("exchange_code=PTS") || url.contains("getInfoOfCurrentMarket")) {
-                    autoGoNextStock()
-                    return@captureCurrentPage
-                }
-
-                // otherwise: do nothing
+// otherwise: do nothing
             } catch (_: Throwable) {
             }
         }
@@ -982,10 +1005,82 @@ private fun handleNonHttpScheme(url: String): Boolean {
         val step = autoQueue[autoIndex]
         autoCurrentCode = step.code
         display.appendLog("AUTO: next ${autoIndex + 1}/${autoQueue.size} code=${step.code ?: ""}")
-        webView.loadUrl(step.url)
+        autoLoadUrlOnce(step.url, "AUTO: open stock")
     }
 
-    private fun isSbiStockDetailUrl(url: String): Boolean {
+
+    private fun extractSbiStockLinksFromHtml(html: String, limit: Int): List<Pair<String, String?>> {
+        // Parse ranking HTML for stock detail links (no-login OutSide=on)
+        val hrefRe = Regex("""<a[^>]+href\s*=\s*"([^"]+)"""", RegexOption.IGNORE_CASE)
+        val codeRes = listOf(
+            Regex("""stock_sec_code=([0-9]{4})"""),
+            Regex("""stock_sec_code_mul=([0-9]{4})"""),
+            Regex("""i_stock_sec=([0-9]{4})""")
+        )
+
+        fun pickCode(u: String): String? {
+            for (re in codeRes) {
+                val m = re.find(u)
+                val g = m?.groupValues?.getOrNull(1)
+                if (!g.isNullOrBlank()) return g
+            }
+            return null
+        }
+
+        fun isAllowed(u: String): Boolean {
+            if (!u.contains("www.sbisec.co.jp/ETGate/")) return false
+            if (!u.contains("OutSide=on")) return false
+            if (u.contains("login.sbisec.co.jp")) return false
+            if (!(u.contains("_ActionID=stockDetail") || u.contains("WPLETsiR001Idtl10"))) return false
+            return true
+        }
+
+        val out = mutableListOf<Pair<String, String?>>()
+        val seenCode = mutableSetOf<String>()
+        var scanned = 0
+
+        for (m in hrefRe.findAll(html)) {
+            scanned += 1
+            val href = m.groupValues.getOrNull(1) ?: continue
+            if (href.isBlank()) continue
+
+            val u = if (href.startsWith("http://") || href.startsWith("https://")) href else {
+                if (href.startsWith("/")) "https://www.sbisec.co.jp${href}"
+                else "https://www.sbisec.co.jp/ETGate/${href}"
+            }
+
+            if (!isAllowed(u)) continue
+
+            val code = pickCode(u) ?: continue
+            if (seenCode.contains(code)) continue
+            seenCode.add(code)
+            out.add(Pair(u, code))
+            if (out.size >= limit) break
+        }
+
+        // debug log
+        try {
+            val sb = StringBuilder()
+            sb.append("ts_ms=").append(System.currentTimeMillis()).append("\n")
+            sb.append("scanned_a=").append(scanned).append("\n")
+            sb.append("picked=").append(out.size).append("\n")
+            for (i in 0 until kotlin.math.min(out.size, 5)) {
+                sb.append("sample[").append(i).append("]=")
+                    .append(out[i].second ?: "").append("\t")
+                    .append(out[i].first).append("\n")
+            }
+            logStore.appendLog("log/auto_extract_debug.log", sb.toString() + "\n")
+        } catch (_: Throwable) {
+        }
+
+        return out
+    }
+
+        private fun isSbiPtsUrl(u: String): Boolean {
+        return u.contains("exchange_code=PTS") || u.contains("_ActionID=getInfoOfCurrentMarket")
+    }
+
+private fun isSbiStockDetailUrl(url: String): Boolean {
         // no-login stock detail pages often use stock_sec_code_mul / i_stock_sec, not stock_sec_code=
         return url.contains("_ActionID=stockDetail") ||
             url.contains("WPLETsiR001Idtl10") ||
@@ -1115,21 +1210,145 @@ private fun handleNonHttpScheme(url: String): Boolean {
             "値上がり率 (SBI)",
             "値下がり率 (SBI)",
             "出来高上位 (SBI)",
-            "売買代金上位 (SBI)"
+            "売買代金上位 (SBI)",
+            "ログイン画面(OTP) を開く",
+            "OTP送信ボタン(自動) + 20秒待ち",
+            "クリップボードのURLを開く",
+            "クリップボードの認証コードを入力 + 認証ボタン"
         )
         AlertDialog.Builder(this)
             .setTitle("SBI")
             .setItems(items) { _, which ->
                 when (which) {
                     0 -> startAutoSbiRanking()
-                    1 -> webView.loadUrl(URL_SBI_UPRATE_T1)
+                    1 -> autoLoadUrlOnce(URL_SBI_UPRATE_T1, "AUTO: open ranking")
                     2 -> webView.loadUrl(URL_SBI_DOWNRATE_T1)
                     3 -> webView.loadUrl(URL_SBI_TURNOVER_T1)
                     4 -> webView.loadUrl(URL_SBI_SALESVAL_T1)
+                    5 -> {
+                        display.appendLog("LOGIN: open entry")
+                        webView.loadUrl(URL_SBI_LOGIN_ENTRY)
+                    }
+                    6 -> {
+                        display.appendLog("LOGIN: try click OTP send + wait 20s")
+                        tryClickOtpSendAndWait()
+                    }
+                    7 -> openClipboardUrl()
+                    8 -> fillOtpFromClipboardAndSubmit()
                 }
             }
             .setNegativeButton("Cancel", null)
             .show()
+    }
+
+
+    // ===== LOGIN helper (OTP) =====
+
+    private fun openClipboardUrl() {
+        val cm = getSystemService(CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+        val clip = try { cm?.primaryClip } catch (_: Throwable) { null }
+        val txt = try { clip?.getItemAt(0)?.coerceToText(this)?.toString() ?: "" } catch (_: Throwable) { "" }
+        val s = txt.trim()
+        if (s.startsWith("http://") || s.startsWith("https://")) {
+            display.appendLog("LOGIN: open clipboard url")
+            webView.loadUrl(s)
+        } else {
+            Toast.makeText(this, "クリップボードにURLがありません", Toast.LENGTH_SHORT).show()
+            display.appendLog("LOGIN: clipboard url missing")
+        }
+    }
+
+    private fun tryClickOtpSendAndWait() {
+        val js = """(function(){
+              try{
+                function norm(s){ return (s||'').replace(/\s+/g,' ').trim(); }
+                function containsText(el, t){
+                  try{
+                    var s = norm(el.innerText||el.textContent||'') + ' ' + norm(el.value||'') + ' ' + norm(el.getAttribute('aria-label')||'');
+                    return s.indexOf(t)>=0;
+                  }catch(e){ return false; }
+                }
+                var btns = document.querySelectorAll('button,input[type=button],input[type=submit],a[role=button]');
+                for(var i=0;i<btns.length;i++){
+                  var el = btns[i];
+                  if(containsText(el,'送信') || containsText(el,'メール') || containsText(el,'認証コード')){
+                    el.click();
+                    return 'clicked';
+                  }
+                }
+                return 'notfound';
+              }catch(e){ return 'error'; }
+            })();""".trimIndent()
+
+        webView.evaluateJavascript(js) { raw ->
+            val r = (raw ?: "").lowercase(Locale.getDefault())
+            if (r.contains("clicked")) {
+                Toast.makeText(this, "OTP送信クリック→20秒待ち（メールの認証コードを確認してね）", Toast.LENGTH_LONG).show()
+                display.appendLog("LOGIN: otp_send clicked -> wait 20s")
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    Toast.makeText(this, "20秒経過。認証コードを貼り付けて認証ボタンを押してね。", Toast.LENGTH_LONG).show()
+                    display.appendLog("LOGIN: wait done")
+                }, 20_000)
+            } else {
+                Toast.makeText(this, "OTP送信ボタンが見つからない", Toast.LENGTH_SHORT).show()
+                display.appendLog("LOGIN: otp_send notfound")
+            }
+        }
+    }
+
+    private fun fillOtpFromClipboardAndSubmit() {
+        val cm = getSystemService(CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+        val clip = try { cm?.primaryClip } catch (_: Throwable) { null }
+        val txt = try { clip?.getItemAt(0)?.coerceToText(this)?.toString() ?: "" } catch (_: Throwable) { "" }
+        val code = Regex("""\d{4,8}""").find(txt)?.value ?: ""
+        if (code.isBlank()) {
+            Toast.makeText(this, "クリップボードに数字コードがありません", Toast.LENGTH_SHORT).show()
+            display.appendLog("LOGIN: otp code missing")
+            return
+        }
+
+        val js = """(function(){
+              try{
+                var code = '${'$'}code';
+                function norm(s){ return (s||'').replace(/\s+/g,' ').trim(); }
+                var inputs = document.querySelectorAll('input[type=tel],input[type=text],input');
+                var filled=false;
+                for(var i=0;i<inputs.length;i++){
+                  var el = inputs[i];
+                  var name = (el.name||'') + ' ' + (el.id||'') + ' ' + (el.getAttribute('placeholder')||'');
+                  if(name.indexOf('認証')>=0 || name.indexOf('code')>=0 || name.indexOf('Code')>=0 || name.indexOf('otp')>=0 || name.indexOf('OTP')>=0){
+                    el.focus();
+                    el.value = code;
+                    el.dispatchEvent(new Event('input', {bubbles:true}));
+                    el.dispatchEvent(new Event('change', {bubbles:true}));
+                    filled=true;
+                    break;
+                  }
+                }
+                if(!filled && inputs.length>0){
+                  inputs[0].focus();
+                  inputs[0].value = code;
+                  inputs[0].dispatchEvent(new Event('input', {bubbles:true}));
+                  inputs[0].dispatchEvent(new Event('change', {bubbles:true}));
+                  filled=true;
+                }
+                var btns = document.querySelectorAll('button,input[type=button],input[type=submit],a[role=button]');
+                for(var j=0;j<btns.length;j++){
+                  var b = btns[j];
+                  var t = norm(b.innerText||b.textContent||b.value||'') + ' ' + norm(b.getAttribute('aria-label')||'');
+                  if(t.indexOf('認証')>=0 || t.indexOf('確認')>=0 || t.indexOf('送信')>=0){
+                    b.click();
+                    return filled ? 'filled_clicked' : 'clicked';
+                  }
+                }
+                return filled ? 'filled_only' : 'noinput';
+              }catch(e){ return 'error'; }
+            })();""".trimIndent()
+
+        webView.evaluateJavascript(js) { raw ->
+            display.appendLog("LOGIN: fill+submit result=${'$'}raw")
+            Toast.makeText(this, "OTP入力/認証を試行: ${'$'}code", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun appendJsonl(fileName: String, obj: JSONObject) {

@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/LogStore.kt
-//ver 1.02-11
+//ver 1.02-12
 package com.papa.sbiwebbot
 
 import android.content.ContentValues

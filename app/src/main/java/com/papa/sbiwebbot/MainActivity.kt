@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/MainActivity.kt
-//ver 1.02-11
+//ver 1.02-20
 package com.papa.sbiwebbot
 
 import android.content.Intent
@@ -9,6 +9,7 @@ import android.view.View
 import android.webkit.WebChromeClient
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
+import android.webkit.RenderProcessGoneDetail
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AlertDialog
@@ -20,6 +21,7 @@ import org.json.JSONObject
 import org.json.JSONTokener
 import java.text.SimpleDateFormat
 import java.util.*
+import java.security.MessageDigest
 
 class MainActivity : AppCompatActivity() {
 
@@ -37,7 +39,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnNeed: Button
     private lateinit var btnNope: Button
     private lateinit var tvNavInfo: TextView
-    private lateinit var tvHelp: TextView
 
     private lateinit var display: Display
     private lateinit var logStore: LogStore
@@ -46,7 +47,7 @@ class MainActivity : AppCompatActivity() {
 
 
     // ==== Explore state ====
-    private val appVersion = "1.02-11"
+    private val appVersion = "1.02-20"
     private val sid: String by lazy {
         SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
     }
@@ -59,6 +60,7 @@ class MainActivity : AppCompatActivity() {
         val text: String,
         val href: String?,
         val xpath: String,
+        val frameCss: String?,
         val score: Int,
         val hitKw: List<String>
     )
@@ -71,6 +73,19 @@ class MainActivity : AppCompatActivity() {
     private var lastTrigger: RecItem? = null
     private var lastNavTrySeq: Long = -1
 
+
+    // last REC hit count (for delaying heavy rescans)
+    private var lastRecHitCount: Int = 0
+
+    // ===== AUTO crawl (no-login, best-effort) =====
+    private enum class AutoMode { NONE, SBI_RANKING }
+    private data class AutoStep(val url: String, val pageType: String, val code: String?)
+    private var autoMode: AutoMode = AutoMode.NONE
+    private val autoQueue: MutableList<AutoStep> = mutableListOf()
+    private var autoIndex: Int = 0
+    private var autoBusy: Boolean = false
+    private var autoCurrentCode: String? = null
+    private val autoMaxSteps: Int = 25
     // Files (fixed folder structure)
     private val fileTry = "log/nav_try" // .jsonl will be appended
     private val filePins = "pins/pins"  // .jsonl
@@ -114,11 +129,12 @@ class MainActivity : AppCompatActivity() {
         btnNeed = findViewById(R.id.btnNeed)
         btnNope = findViewById(R.id.btnNope)
         tvNavInfo = findViewById(R.id.tvNavInfo)
-        tvHelp = findViewById(R.id.tvHelp)
-
         logStore = LogStore(this, sid, appVersion)
         logStore.ensureRunFolders()
         display = Display(this, tvLog, tabLayout, logStore)
+
+        // Crash log -> Download/Sbi/<sid>/log/crash.txt
+        installCrashHandler()
 
         // Sref snapshot (replay seeds) - keep it simple and reproducible.
         // NOTE: do NOT hard-fix tracking/time params here (only keep in comments/log).
@@ -172,6 +188,11 @@ pickLogDirLauncher = registerForActivityResult(ActivityResultContracts.OpenDocum
             showRecPanel()
             runRec()
         }
+        // Long-press REC: start AUTO crawl (best-effort) from current page
+        btnRec.setOnLongClickListener {
+            startAutoFromCurrent()
+            true
+        }
         btnLog.setOnClickListener {
             AlertDialog.Builder(this)
                 .setTitle("LOG / PIN")
@@ -200,9 +221,20 @@ pickLogDirLauncher = registerForActivityResult(ActivityResultContracts.OpenDocum
             display.appendLog("NAV: open Yahoo ranking")
             webView.loadUrl(URL_YAHOO_UP)
         }
+        // Long-press Y!: quick snapshot (HTML+JSON)
+        btnYahoo.setOnLongClickListener {
+            captureCurrentPage("manual")
+            true
+        }
 
         btnSbi.setOnClickListener {
-            showSbiMenu()
+            display.appendLog("NAV: open SBI ranking (direct)")
+            webView.loadUrl(URL_SBI_UPRATE_T1)
+        }
+        // Long-press S!: menu (ranking switch / auto)
+        btnSbi.setOnLongClickListener {
+            showSbiMenuWithAuto()
+            true
         }
 
         btnExport.setOnClickListener {
@@ -236,7 +268,6 @@ btnExport.setOnLongClickListener {
         tvNavInfo.text = "EXPLORE / sid=$sid"
         display.appendLog("OUT: Download/Sbi/${logStore.getRunDirName()}/...")
 
-        tvHelp.text = buildHelpText()
         showRecPanel()
 
         // start: Yahoo ranking (public) as a safe first target
@@ -251,18 +282,14 @@ btnExport.setOnLongClickListener {
         lvRec.visibility = View.VISIBLE
         layoutLog.visibility = View.GONE
         btnRec.isEnabled = false
-        btnLog.isEnabled = true
-        tvHelp.text = buildHelpText()
-    }
+        btnLog.isEnabled = true    }
 
     /** LOGパネル（ログ表示）を表示 */
     private fun showLogPanel() {
         lvRec.visibility = View.GONE
         layoutLog.visibility = View.VISIBLE
         btnRec.isEnabled = true
-        btnLog.isEnabled = false
-        tvHelp.text = buildHelpText()
-    }
+        btnLog.isEnabled = false    }
 
     /**
      * evaluateJavascript() の戻り値は "..." の文字列として返ることが多い。
@@ -289,45 +316,8 @@ btnExport.setOnLongClickListener {
     }
 
     /** 画面に常時出すヘルプ。迷子防止 */
-    private fun buildHelpText(): String {
-        val url = webView.url ?: "(no url)"
-        val mode = "EXPLORE(no-login)"
-        val panel = if (lvRec.visibility == View.VISIBLE) "REC" else "LOG"
-        val cand = recItems.size
-        val hasPending = (lastTrigger != null && lastFromUrl != null)
-        val pendingText = if (hasPending) {
-            val t = lastTrigger?.text ?: ""
-            val s = lastTrigger?.score ?: 0
-            "PENDING: score=$s $t"
-        } else {
-            "PENDING: none (候補をタップ or 手動タップ→遷移後に必要/不要)"
-        }
 
-        val p = logStore.getPublicDirHint()
-
-        return buildString {
-            append("v$appVersion  $mode  panel=$panel\n")
-            append("操作: 1) REC→候補  2) 候補タップ or 手動タップで遷移\n")
-            append("      3) 遷移後『必要』でPIN保存 / 『不要』で戻る  4) BACK\n")
-            append("候補数=$cand   $pendingText\n")
-            append("ログ保存先: $p\n")
-            append("  log/oplog.txt\n")
-            append("  log/nav_try.jsonl\n")
-            append("  pins/pins.jsonl\n")
-            append("  rec/rec_candidates.jsonl\n")
-            append("  log/xpath.log\n")
-            append("  log/sref.log\n")
-            val pubErr = logStore.getLastPublicError()
-            if (pubErr.isNotBlank()) {
-                append("PUBLIC_LOG_ERR: $pubErr\n")
-                append("→ EXP を押してExportを試す\n")
-            }
-            append("URL: $url")
-        }
-    }
-
-
-// ===== JS Bridge for capturing USER manual taps =====
+    // ===== JS Bridge for capturing USER manual taps =====
     private inner class JsBridge {
         private var lastTs: Long = 0
         private var lastKey: String = ""
@@ -345,6 +335,7 @@ btnExport.setOnLongClickListener {
                 val text = o.optString("text", "").trim()
                 val href = o.optString("href", "").ifBlank { null }
                 val xpath = o.optString("xpath", "")
+                val frameCss = o.optString("frameCss", "").ifBlank { null }
                 if (xpath.isBlank()) return
 
                 val key = "$tag|$type|$text|${href ?: ""}|$xpath"
@@ -361,6 +352,7 @@ btnExport.setOnLongClickListener {
                         text = text.ifBlank { "(no-text)" },
                         href = href,
                         xpath = xpath,
+                        frameCss = frameCss,
                         score = score,
                         hitKw = hits
                     )
@@ -383,6 +375,7 @@ btnExport.setOnLongClickListener {
                             put("text", rec.text)
                             put("href", rec.href ?: JSONObject.NULL)
                             put("xpath", rec.xpath)
+                            put("frameCss", rec.frameCss ?: JSONObject.NULL)
                             put("score", rec.score)
                             put("kw", JSONArray(rec.hitKw))
                         })
@@ -399,6 +392,7 @@ btnExport.setOnLongClickListener {
                         put("text", rec.text)
                         put("href", rec.href ?: JSONObject.NULL)
                         put("xpath", rec.xpath)
+                        put("frameCss", rec.frameCss ?: JSONObject.NULL)
                         put("score", rec.score)
                         put("kw", JSONArray(rec.hitKw))
                     })
@@ -411,20 +405,171 @@ btnExport.setOnLongClickListener {
         }
     }
 
+private fun installCrashHandler() {
+    try {
+        val prev = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { t, e ->
+            try {
+                val sb = StringBuilder()
+                sb.append("v=").append(appVersion).append("\n")
+                sb.append("sid=").append(sid).append("\n")
+                sb.append("ts_ms=").append(System.currentTimeMillis()).append("\n")
+                sb.append("thread=").append(t.name).append("\n")
+                sb.append("\n")
+                sb.append(android.util.Log.getStackTraceString(e))
+                logStore.writeText("log/crash.txt", "text/plain", sb.toString())
+            } catch (_: Throwable) {
+            }
+            try {
+                prev?.uncaughtException(t, e)
+            } catch (_: Throwable) {
+            }
+        }
+    } catch (_: Throwable) {
+    }
+}
+
+
+    private fun logRenderProcessGone(detail: RenderProcessGoneDetail?) {
+        try {
+            val sb = StringBuilder()
+            sb.append("v=").append(appVersion).append("\n")
+            sb.append("sid=").append(sid).append("\n")
+            sb.append("ts_ms=").append(System.currentTimeMillis()).append("\n")
+            sb.append("url=").append(webView.url ?: "").append("\n")
+            sb.append("didCrash=").append(detail?.didCrash() ?: false).append("\n")
+            sb.append("rendererPriorityAtExit=").append(detail?.rendererPriorityAtExit() ?: -1).append("\n")
+            logStore.writeText("log/render_gone.txt", "text/plain", sb.toString())
+        } catch (_: Throwable) {
+        }
+    }
+
+
+
+
 
     private fun setupWebView() {
         WebView.setWebContentsDebuggingEnabled(true)
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
+        webView.settings.setSupportMultipleWindows(true)
+        webView.settings.javaScriptCanOpenWindowsAutomatically = true
         webView.settings.userAgentString = webView.settings.userAgentString + " SbiWebBot/$appVersion"
 
-        webView.webChromeClient = WebChromeClient()
+        webView.webChromeClient = object : WebChromeClient() {
+            override fun onCreateWindow(
+                view: WebView?,
+                isDialog: Boolean,
+                isUserGesture: Boolean,
+                resultMsg: android.os.Message?
+            ): Boolean {
+                // SBIなどで target=_blank / window.open のポップアップが来るときに、
+                // 親WebViewをそのまま渡すと端末によっては
+                // IllegalArgumentException("Parent WebView cannot host its own popup window")
+                // で落ちる。
+                // ここではダミーWebViewでURLだけ捕まえて、親WebViewにロードする。
+                return try {
+                    val transport = resultMsg?.obj as? WebView.WebViewTransport ?: return false
+
+                    val popupWebView = WebView(this@MainActivity)
+                    popupWebView.settings.javaScriptEnabled = true
+                    popupWebView.settings.domStorageEnabled = true
+
+                    fun handlePopupUrl(u: String) {
+                        if (u.isBlank() || u == "about:blank") return
+                        val from = try { webView.url ?: "" } catch (_: Throwable) { "" }
+                        display.appendLog("POPUP: $u")
+                        appendJsonl(fileTry, JSONObject().apply {
+                            put("sid", sid)
+                            put("seq", nextSeq())
+                            put("ts_ms", System.currentTimeMillis())
+                            put("type", "POPUP")
+                            put("from_url", from)
+                            put("url", u)
+                        })
+                        try {
+                            webView.post { webView.loadUrl(u) }
+                        } catch (_: Throwable) {
+                        }
+                    }
+
+                    popupWebView.webViewClient = object : android.webkit.WebViewClient() {
+                        override fun shouldOverrideUrlLoading(
+                            v: WebView?,
+                            request: android.webkit.WebResourceRequest?
+                        ): Boolean {
+                            val u = try { request?.url?.toString() ?: "" } catch (_: Throwable) { "" }
+                            handlePopupUrl(u)
+                            try { v?.stopLoading() } catch (_: Throwable) {}
+                            try { v?.destroy() } catch (_: Throwable) {}
+                            return true
+                        }
+
+                        override fun shouldOverrideUrlLoading(v: WebView?, url: String?): Boolean {
+                            val u = url ?: ""
+                            handlePopupUrl(u)
+                            try { v?.stopLoading() } catch (_: Throwable) {}
+                            try { v?.destroy() } catch (_: Throwable) {}
+                            return true
+                        }
+
+                        override fun onPageStarted(
+                            v: WebView?,
+                            url: String?,
+                            favicon: android.graphics.Bitmap?
+                        ) {
+                            // about:blank → 実URL のケースを拾う
+                            handlePopupUrl(url ?: "")
+                            try { v?.stopLoading() } catch (_: Throwable) {}
+                            try { v?.destroy() } catch (_: Throwable) {}
+                        }
+                    }
+
+                    transport.webView = popupWebView
+                    resultMsg.sendToTarget()
+                    true
+                } catch (t: Throwable) {
+                    display.appendLog("Web: onCreateWindow error: ${t.javaClass.simpleName}")
+                    false
+                }
+            }
+        }
 
         // capture manual taps from WebView
         webView.addJavascriptInterface(JsBridge(), "AndroidBridge")
 
         webView.webViewClient = object : android.webkit.WebViewClient() {
-            override fun onPageFinished(view: WebView?, url: String?) {
+override fun shouldOverrideUrlLoading(view: WebView?, request: android.webkit.WebResourceRequest?): Boolean {
+    val url = try { request?.url?.toString() ?: "" } catch (_: Throwable) { "" }
+    if (url.isBlank()) return false
+    return handleNonHttpScheme(url)
+}
+
+override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
+    val u = url ?: return false
+    return handleNonHttpScheme(u)
+}
+
+            
+            override fun onRenderProcessGone(view: WebView?, detail: RenderProcessGoneDetail?): Boolean {
+                // WebView renderer can die (OOM / WebView bug). Handle it to avoid app crash and keep logs.
+                try {
+                    display.appendLog("Web: RenderProcessGone didCrash=${detail?.didCrash() ?: false}")
+                    logRenderProcessGone(detail)
+                } catch (_: Throwable) {
+                }
+                try {
+                    Toast.makeText(this@MainActivity, "WebViewが落ちました。再起動します。", Toast.LENGTH_SHORT).show()
+                } catch (_: Throwable) {
+                }
+                try {
+                    this@MainActivity.recreate()
+                } catch (_: Throwable) {
+                }
+                return true
+            }
+
+override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
                 val u = url ?: return
                 display.appendLog("Web: Page -> $u")
@@ -435,20 +580,34 @@ btnExport.setOnLongClickListener {
                 // After navigation completes, show decision buttons if we have a pending trigger
                 updateDecisionButtons()
 
-                // Auto-run REC for convenience
-                // (If noisy, user can tap REC manually)
+                // Auto-run REC (heavy pages may kill WebView; delay rescan only when first scan has 0 hits)
+                lastRecHitCount = 0
                 runRec()
-            }
+                try {
+                    val pageUrl = u
+                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                        val cur = webView.url ?: ""
+                        if (cur == pageUrl && lastRecHitCount == 0) {
+                            runRec()
+                        }
+                    }, 900)
+                } catch (_: Throwable) {
+                }
+
+                // AUTO crawl hook
+                try {
+                    autoOnPageFinished(u)
+                } catch (_: Throwable) {
+                }
+}
         }
     }
 
     private fun updateDecisionButtons() {
-        val hasTrigger = lastTrigger != null && lastFromUrl != null
         // Always enabled for "intuitive" operation.
         // If pending is none, markNeed/Nope will just show a message.
         btnNeed.isEnabled = true
         btnNope.isEnabled = true
-        tvHelp.text = buildHelpText()
     }
 
     private fun doBack() {
@@ -472,18 +631,23 @@ btnExport.setOnLongClickListener {
             try {
                 val arr = JSONArray(decodeJsResultToJson(json))
                 val list = mutableListOf<RecItem>()
+                val maxItems = 800
                 val pageUrl = webView.url ?: ""
                 val pageTitle = try { webView.title ?: "" } catch (_: Throwable) { "" }
                 for (i in 0 until arr.length()) {
+                    if (i >= maxItems) break
                     val o = arr.getJSONObject(i)
                     val tag = o.optString("tag", "")
                     val text = o.optString("text", "").trim()
                     val href = o.optString("href", "").ifBlank { null }
                     val xpath = o.optString("xpath", "")
+                    val frameCss = o.optString("frameCss", "").ifBlank { null }
                     if (xpath.isBlank()) continue
                     val (score, hits) = scoreKeywords(text + " " + (href ?: ""))
 
-                    // Always write to rec_candidates (for replay / later pinning), even if score=0.
+                    
+                    if (score <= 0) continue
+
                     appendJsonl(fileRecCandidates, JSONObject().apply {
                         put("sid", sid)
                         put("ts_ms", System.currentTimeMillis())
@@ -494,18 +658,18 @@ btnExport.setOnLongClickListener {
                         put("text", text)
                         put("href", href ?: JSONObject.NULL)
                         put("xpath", xpath)
+                        put("frameCss", frameCss ?: JSONObject.NULL)
                         put("score", score)
                         put("kw", JSONArray(hits))
                     })
-
-                    if (score <= 0) continue
-                    list.add(RecItem(tag, text, href, xpath, score, hits))
+                    list.add(RecItem(tag, text, href, xpath, frameCss, score, hits))
                 }
 
                 // sort by score desc, then text length asc
                 val sorted = list.sortedWith(compareByDescending<RecItem> { it.score }.thenBy { it.text.length }).take(60)
                 recItems = sorted
 
+                lastRecHitCount = sorted.size
                 val lines = sorted.map { item ->
                     val kw = item.hitKw.joinToString(",")
                     val t = if (item.text.isNotBlank()) item.text else "(no-text)"
@@ -517,9 +681,7 @@ btnExport.setOnLongClickListener {
                     (recAdapter.clear())
                     recAdapter.addAll(lines)
                     recAdapter.notifyDataSetChanged()
-                    display.appendLog("REC: candidates=${sorted.size}")
-                    tvHelp.text = buildHelpText()
-                }
+                    display.appendLog("REC: candidates=${sorted.size}")                }
             } catch (e: Exception) {
                 display.appendLog("REC: parse error: ${e.message}")
             }
@@ -565,7 +727,7 @@ btnExport.setOnLongClickListener {
         display.appendLog("NAV_TRY: seq=$seqNow text=${item.text} score=${item.score}")
 
         // Prefer click by xpath (handles JS links). If it fails, fallback to loadUrl(href).
-        val clickScript = WebScripts.clickByXpathScript(item.xpath)
+        val clickScript = WebScripts.clickByXpathScript(item.xpath, item.frameCss)
         webView.evaluateJavascript(clickScript) { res ->
             val ok = (res ?: "").contains("true", ignoreCase = true)
             if (!ok) {
@@ -585,6 +747,38 @@ btnExport.setOnLongClickListener {
         updateDecisionButtons()
     }
 
+
+private fun handleNonHttpScheme(url: String): Boolean {
+    val u = url.trim()
+    val lower = u.lowercase(Locale.getDefault())
+    if (lower.startsWith("http://") || lower.startsWith("https://")) {
+        return false
+    }
+    // Block dangerous / unsupported schemes; try to delegate safely.
+    display.appendLog("Web: non-http scheme -> $u")
+    try {
+        if (lower.startsWith("intent:")) {
+            val it = Intent.parseUri(u, Intent.URI_INTENT_SCHEME)
+            try {
+                startActivity(it)
+            } catch (_: Throwable) {
+                // fallback to browser url if present
+                val fb = it.getStringExtra("browser_fallback_url")
+                if (!fb.isNullOrBlank()) {
+                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(fb)))
+                }
+            }
+            return true
+        }
+        val it = Intent(Intent.ACTION_VIEW, Uri.parse(u))
+        startActivity(it)
+        return true
+    } catch (t: Throwable) {
+        display.appendLog("Web: scheme handle failed: ${t.javaClass.simpleName}")
+        Toast.makeText(this, "リンクを開けません: ${t.javaClass.simpleName}", Toast.LENGTH_SHORT).show()
+        return true
+    }
+}
     private fun toAbsoluteUrl(base: String, href: String): String {
         if (href.startsWith("http://") || href.startsWith("https://")) return href
         return try {
@@ -614,7 +808,7 @@ btnExport.setOnLongClickListener {
             put("from_url", from)
             put("to_url", to)
             put("selectors", JSONArray().apply {
-                put(JSONObject().apply { put("type", "xpath"); put("v", trig.xpath) })
+                put(JSONObject().apply { put("type", "xpath"); put("v", trig.xpath); put("frameCss", trig.frameCss ?: JSONObject.NULL) })
                 if (!trig.text.isBlank()) put(JSONObject().apply { put("type", "text"); put("v", trig.text) })
                 if (!trig.href.isNullOrBlank()) put(JSONObject().apply { put("type", "href"); put("v", trig.href) })
             })
@@ -636,9 +830,7 @@ btnExport.setOnLongClickListener {
         // clear pending trigger
         lastFromUrl = null
         lastTrigger = null
-        updateDecisionButtons()
-        tvHelp.text = buildHelpText()
-    }
+        updateDecisionButtons()    }
 
     private fun markNopeAndBack() {
         val from = lastFromUrl
@@ -668,29 +860,241 @@ btnExport.setOnLongClickListener {
         lastFromUrl = null
         lastTrigger = null
         updateDecisionButtons()
-        tvHelp.text = buildHelpText()
         doBack()
     }
 
-    private fun showSbiMenu() {
+    // ===== AUTO / SNAPSHOT =====
+
+    private fun startAutoFromCurrent() {
+        val url = webView.url ?: ""
+        if (url.contains("sbisec.co.jp") && url.contains("cat2=ranking")) {
+            startAutoSbiRanking()
+            return
+        }
+        // fallback: just snapshot current
+        captureCurrentPage("auto")
+    }
+
+    private fun startAutoSbiRanking() {
+        display.appendLog("AUTO: start SBI ranking crawl")
+        autoMode = AutoMode.SBI_RANKING
+        autoQueue.clear()
+        autoIndex = 0
+        autoBusy = false
+        autoCurrentCode = null
+
+        val url = webView.url ?: ""
+        if (!url.contains("sbisec.co.jp") || !url.contains("cat2=ranking")) {
+            webView.loadUrl(URL_SBI_UPRATE_T1)
+        }
+    }
+
+    private fun autoOnPageFinished(url: String) {
+        if (autoMode == AutoMode.NONE) return
+        if (autoBusy) return
+
+        // always snapshot
+        autoBusy = true
+        captureCurrentPage("auto") {
+            try {
+                autoBusy = false
+                if (autoMode != AutoMode.SBI_RANKING) return@captureCurrentPage
+
+                // 1) if queue not built yet and we are on ranking page => build queue
+                if (autoQueue.isEmpty() && url.contains("cat2=ranking")) {
+                    val js = WebScripts.extractSbiStockLinksScript(limit = 8)
+                    webView.evaluateJavascript(js) { raw ->
+                        try {
+                            val s = decodeJsResultToJson(raw)
+                            val arr = JSONArray(s)
+                            for (i in 0 until arr.length()) {
+                                val o = arr.getJSONObject(i)
+                                val u = o.optString("url", "")
+                                val code = o.optString("code", "").ifBlank { null }
+                                if (u.isBlank()) continue
+                                autoQueue.add(AutoStep(url = u, pageType = "stock", code = code))
+                            }
+                            display.appendLog("AUTO: queue=${autoQueue.size}")
+                            if (autoQueue.isNotEmpty()) {
+                                autoIndex = 0
+                                autoCurrentCode = autoQueue[0].code
+                                webView.loadUrl(autoQueue[0].url)
+                            } else {
+                                display.appendLog("AUTO: no stock links found")
+                            }
+                        } catch (t: Throwable) {
+                            display.appendLog("AUTO: extract failed: ${t.javaClass.simpleName}")
+                        }
+                    }
+                    return@captureCurrentPage
+                }
+
+                // 2) if current looks like stock page => try PTS
+                if (url.contains("stock_sec_code=")) {
+                    val code = extractCodeFromUrl(url)
+                    if (!code.isNullOrBlank()) autoCurrentCode = code
+                    val jsPts = WebScripts.findPtsLinkScript()
+                    webView.evaluateJavascript(jsPts) { raw ->
+                        val s = decodeJsResultToJson(raw)
+                        val ptsUrl = s.trim().trim('"')
+                        if (ptsUrl.isNotBlank()) {
+                            display.appendLog("AUTO: open PTS")
+                            webView.loadUrl(ptsUrl)
+                        } else {
+                            autoGoNextStock()
+                        }
+                    }
+                    return@captureCurrentPage
+                }
+
+                // 3) if current looks like PTS page => next
+                if (url.contains("exchange_code=PTS") || url.contains("getInfoOfCurrentMarket")) {
+                    autoGoNextStock()
+                    return@captureCurrentPage
+                }
+
+                // otherwise: do nothing
+            } catch (_: Throwable) {
+            }
+        }
+    }
+
+    private fun autoGoNextStock() {
+        autoIndex += 1
+        if (autoIndex >= autoQueue.size || autoIndex >= autoMaxSteps) {
+            display.appendLog("AUTO: done (steps=${autoIndex}/${autoQueue.size})")
+            autoMode = AutoMode.NONE
+            autoQueue.clear()
+            autoIndex = 0
+            autoCurrentCode = null
+            return
+        }
+        val step = autoQueue[autoIndex]
+        autoCurrentCode = step.code
+        display.appendLog("AUTO: next ${autoIndex + 1}/${autoQueue.size} code=${step.code ?: ""}")
+        webView.loadUrl(step.url)
+    }
+
+    private fun extractCodeFromUrl(url: String): String? {
+        return try {
+            val m = Regex("stock_sec_code=([0-9]{4})").find(url)
+            m?.groupValues?.getOrNull(1)
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    private fun sha1Hex(s: String): String {
+        return try {
+            val md = MessageDigest.getInstance("SHA-1")
+            val b = md.digest(s.toByteArray(Charsets.UTF_8))
+            val sb = StringBuilder()
+            for (x in b) sb.append(String.format("%02x", x))
+            sb.toString()
+        } catch (_: Throwable) {
+            ""
+        }
+    }
+
+    private fun safeName(s: String): String {
+        return s.replace("\\", "_")
+            .replace("/", "_")
+            .replace(":", "_")
+            .replace("?", "_")
+            .replace("&", "_")
+            .replace("=", "_")
+            .replace("%", "_")
+            .replace("#", "_")
+    }
+
+    private fun detectPageType(url: String): String {
+        val u = url.lowercase(Locale.getDefault())
+        if (u.contains("exchange_code=pts") || u.contains("getinfoofcurrentmarket")) return "pts"
+        if (u.contains("cat2=ranking")) return "ranking"
+        if (u.contains("stock_sec_code=")) return "stock"
+        return "page"
+    }
+
+    private fun detectSource(url: String): String {
+        val u = url.lowercase(Locale.getDefault())
+        if (u.contains("finance.yahoo.co.jp")) return "yahoo"
+        if (u.contains("sbisec.co.jp")) return "sbi"
+        return "other"
+    }
+
+    private fun captureCurrentPage(tag: String, onDone: (() -> Unit)? = null) {
+        val url = webView.url ?: ""
+        val title = try { webView.title ?: "" } catch (_: Throwable) { "" }
+        val pageType = detectPageType(url)
+        val source = detectSource(url)
+        val code = extractCodeFromUrl(url) ?: autoCurrentCode
+        val ts = System.currentTimeMillis()
+
+        webView.evaluateJavascript(WebScripts.outerHtmlScript()) { rawHtml ->
+            val html = decodeJsResultToJson(rawHtml)
+            webView.evaluateJavascript(WebScripts.bodyTextScript()) { rawText ->
+                val text = decodeJsResultToJson(rawText)
+
+                val htmlHash = sha1Hex(html)
+                val snippet = if (text.length > 1200) text.substring(0, 1200) else text
+
+                val base = buildString {
+                    append(tag)
+                    append("-")
+                    append(pageType)
+                    if (!code.isNullOrBlank()) {
+                        append("-")
+                        append(code)
+                    }
+                    append("-")
+                    append(SimpleDateFormat("HHmmss", Locale.getDefault()).format(Date()))
+                }
+                val name = safeName(base)
+
+                try {
+                    logStore.writeText("html/$name.html", "text/html", html)
+                } catch (_: Throwable) {
+                }
+
+                try {
+                    val jo = JSONObject().apply {
+                        put("sid", sid)
+                        put("ts_ms", ts)
+                        put("source", source)
+                        put("pageType", pageType)
+                        put("url", url)
+                        put("title", title)
+                        put("code", code ?: JSONObject.NULL)
+                        put("htmlSha1", htmlHash)
+                        put("textSnippet", snippet)
+                    }
+                    logStore.writeText("json/$name.json", "application/json", jo.toString(2))
+                    display.appendLog("SNAP: $name ($pageType)")
+                } catch (_: Throwable) {
+                }
+                onDone?.invoke()
+            }
+        }
+    }
+
+    private fun showSbiMenuWithAuto() {
         val items = arrayOf(
+            "AUTO開始 (このランキングから)",
             "値上がり率 (SBI)",
             "値下がり率 (SBI)",
             "出来高上位 (SBI)",
             "売買代金上位 (SBI)"
         )
         AlertDialog.Builder(this)
-            .setTitle("SBIランキング")
+            .setTitle("SBI")
             .setItems(items) { _, which ->
-                val url = when (which) {
-                    0 -> URL_SBI_UPRATE_T1
-                    1 -> URL_SBI_DOWNRATE_T1
-                    2 -> URL_SBI_TURNOVER_T1
-                    3 -> URL_SBI_SALESVAL_T1
-                    else -> URL_SBI_UPRATE_T1
+                when (which) {
+                    0 -> startAutoSbiRanking()
+                    1 -> webView.loadUrl(URL_SBI_UPRATE_T1)
+                    2 -> webView.loadUrl(URL_SBI_DOWNRATE_T1)
+                    3 -> webView.loadUrl(URL_SBI_TURNOVER_T1)
+                    4 -> webView.loadUrl(URL_SBI_SALESVAL_T1)
                 }
-                display.appendLog("NAV: open SBI ranking idx=$which")
-                webView.loadUrl(url)
             }
             .setNegativeButton("Cancel", null)
             .show()
@@ -699,7 +1103,7 @@ btnExport.setOnLongClickListener {
     private fun appendJsonl(fileName: String, obj: JSONObject) {
         try {
 			// NOTE: keep this as an escaped newline. Do NOT put a raw line break inside quotes.
-			val line = obj.toString() + "\\n"
+			val line = obj.toString() + "\n"
             // internal + public (Download/Sbi/<sid>/...)
             logStore.appendJsonl(fileName, line)
         } catch (e: Exception) {

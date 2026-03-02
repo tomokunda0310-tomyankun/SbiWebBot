@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--app/src/main/res/layout/activity_main.xml-->
-<!--ver 1.02-11-->
+<!--ver 1.02-20-->
 <androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/root"
@@ -12,7 +12,7 @@
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="4dp"
+        android:padding="2dp"
         android:background="#EEEEEE"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintStart_toStartOf="parent"
@@ -27,50 +27,50 @@
             <Button
                 android:id="@+id/btnBack"
                 android:layout_width="0dp"
-                android:layout_height="36dp"
+                android:layout_height="26dp"
                 android:layout_weight="1"
                 android:text="BACK"
-                android:textSize="12sp" />
+                android:textSize="9sp" />
 
             <Button
                 android:id="@+id/btnRec"
                 android:layout_width="0dp"
-                android:layout_height="36dp"
+                android:layout_height="26dp"
                 android:layout_weight="1"
                 android:text="REC"
-                android:textSize="12sp" />
+                android:textSize="9sp" />
 
             <Button
                 android:id="@+id/btnLog"
                 android:layout_width="0dp"
-                android:layout_height="36dp"
+                android:layout_height="26dp"
                 android:layout_weight="1"
                 android:text="LOG"
-                android:textSize="12sp" />
+                android:textSize="9sp" />
 
             <Button
                 android:id="@+id/btnYahoo"
                 android:layout_width="0dp"
-                android:layout_height="36dp"
+                android:layout_height="26dp"
                 android:layout_weight="1"
                 android:text="Y!"
-                android:textSize="12sp" />
+                android:textSize="9sp" />
 
             <Button
                 android:id="@+id/btnSbi"
                 android:layout_width="0dp"
-                android:layout_height="36dp"
+                android:layout_height="26dp"
                 android:layout_weight="1"
                 android:text="S!"
-                android:textSize="12sp" />
+                android:textSize="9sp" />
 
             <Button
                 android:id="@+id/btnExport"
                 android:layout_width="0dp"
-                android:layout_height="36dp"
+                android:layout_height="26dp"
                 android:layout_weight="1"
                 android:text="EXP"
-                android:textSize="12sp" />
+                android:textSize="9sp" />
 
         </LinearLayout>
 
@@ -84,18 +84,18 @@
             <Button
                 android:id="@+id/btnNeed"
                 android:layout_width="0dp"
-                android:layout_height="36dp"
+                android:layout_height="26dp"
                 android:layout_weight="1"
                 android:text="必要"
-                android:textSize="12sp" />
+                android:textSize="9sp" />
 
             <Button
                 android:id="@+id/btnNope"
                 android:layout_width="0dp"
-                android:layout_height="36dp"
+                android:layout_height="26dp"
                 android:layout_weight="1"
                 android:text="不要"
-                android:textSize="12sp" />
+                android:textSize="9sp" />
 
             <TextView
                 android:id="@+id/tvNavInfo"
@@ -105,7 +105,7 @@
                 android:paddingStart="8dp"
                 android:paddingEnd="4dp"
                 android:text="EXPLORE"
-                android:textSize="12sp"
+                android:textSize="9sp"
                 android:maxLines="2" />
         </LinearLayout>
     </LinearLayout>
@@ -122,7 +122,7 @@
     <LinearLayout
         android:id="@+id/bottomPanel"
         android:layout_width="0dp"
-        android:layout_height="220dp"
+        android:layout_height="170dp"
         android:orientation="vertical"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
@@ -134,17 +134,6 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             app:tabMode="fixed" />
-
-        <TextView
-            android:id="@+id/tvHelp"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:background="#FFF3B0"
-            android:padding="8dp"
-            android:textSize="12sp"
-            android:textColor="#000000"
-            android:maxLines="6"
-            android:text="HELP" />
 
         <FrameLayout
             android:layout_width="match_parent"
@@ -161,7 +150,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:padding="8dp"
-                    android:textSize="12sp" />
+                    android:textSize="10sp" />
             </ScrollView>
 
             <ListView

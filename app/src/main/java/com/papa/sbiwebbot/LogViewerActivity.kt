@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/LogViewerActivity.kt
-//ver 1.02-11
+//ver 1.02-12
 package com.papa.sbiwebbot
 
 import android.os.Bundle
@@ -15,7 +15,7 @@ class LogViewerActivity : AppCompatActivity() {
         const val EXTRA_MODE = "mode" // "logs" | "pins"
     }
 
-    private val appVersion = "1.02-11"
+    private val appVersion = "1.02-12"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

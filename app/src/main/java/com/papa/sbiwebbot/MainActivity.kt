@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/MainActivity.kt
-//ver 1.02-20
+//ver 1.02-23
 package com.papa.sbiwebbot
 
 import android.content.Intent
@@ -47,7 +47,7 @@ class MainActivity : AppCompatActivity() {
 
 
     // ==== Explore state ====
-    private val appVersion = "1.02-20"
+    private val appVersion = "1.02-23"
     private val sid: String by lazy {
         SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
     }
@@ -188,8 +188,9 @@ pickLogDirLauncher = registerForActivityResult(ActivityResultContracts.OpenDocum
             showRecPanel()
             runRec()
         }
-        // Long-press REC: start AUTO crawl (best-effort) from current page
+        // Long-press REC: AUTO開始（現在ページから best-effort）
         btnRec.setOnLongClickListener {
+            Toast.makeText(this, "AUTO開始: 現在ページから", Toast.LENGTH_SHORT).show()
             startAutoFromCurrent()
             true
         }
@@ -228,16 +229,17 @@ pickLogDirLauncher = registerForActivityResult(ActivityResultContracts.OpenDocum
         }
 
         btnSbi.setOnClickListener {
-            display.appendLog("NAV: open SBI ranking (direct)")
-            webView.loadUrl(URL_SBI_UPRATE_T1)
-        }
-        // Long-press S!: menu (ranking switch / auto)
-        btnSbi.setOnLongClickListener {
+            // メニュー表示（AUTO/各ランキング）
+            display.appendLog("NAV: SBI menu")
             showSbiMenuWithAuto()
+        }
+        // Long-press S!: AUTO開始（即開始）
+        btnSbi.setOnLongClickListener {
+            Toast.makeText(this, "AUTO開始: SBIランキング巡回", Toast.LENGTH_SHORT).show()
+            startAutoSbiRanking()
             true
         }
-
-        btnExport.setOnClickListener {
+btnExport.setOnClickListener {
             val r = logStore.exportAllToPublic()
             if (r.ok) {
                 display.appendLog("EXPORT: OK -> ${r.publicDir}")
@@ -876,6 +878,7 @@ private fun handleNonHttpScheme(url: String): Boolean {
     }
 
     private fun startAutoSbiRanking() {
+        try { Toast.makeText(this, "AUTO開始: SBIランキング", Toast.LENGTH_SHORT).show() } catch (_: Throwable) {}
         display.appendLog("AUTO: start SBI ranking crawl")
         autoMode = AutoMode.SBI_RANKING
         autoQueue.clear()
@@ -900,6 +903,13 @@ private fun handleNonHttpScheme(url: String): Boolean {
                 autoBusy = false
                 if (autoMode != AutoMode.SBI_RANKING) return@captureCurrentPage
 
+
+                // If redirected to login, skip this stock and continue (no-login range only)
+                if (url.contains("login.sbisec.co.jp")) {
+                    display.appendLog("AUTO: hit login -> skip")
+                    autoGoNextStock()
+                    return@captureCurrentPage
+                }
                 // 1) if queue not built yet and we are on ranking page => build queue
                 if (autoQueue.isEmpty() && url.contains("cat2=ranking")) {
                     val js = WebScripts.extractSbiStockLinksScript(limit = 8)
@@ -930,7 +940,7 @@ private fun handleNonHttpScheme(url: String): Boolean {
                 }
 
                 // 2) if current looks like stock page => try PTS
-                if (url.contains("stock_sec_code=")) {
+                if (isSbiStockDetailUrl(url)) {
                     val code = extractCodeFromUrl(url)
                     if (!code.isNullOrBlank()) autoCurrentCode = code
                     val jsPts = WebScripts.findPtsLinkScript()
@@ -975,10 +985,28 @@ private fun handleNonHttpScheme(url: String): Boolean {
         webView.loadUrl(step.url)
     }
 
+    private fun isSbiStockDetailUrl(url: String): Boolean {
+        // no-login stock detail pages often use stock_sec_code_mul / i_stock_sec, not stock_sec_code=
+        return url.contains("_ActionID=stockDetail") ||
+            url.contains("WPLETsiR001Idtl10") ||
+            url.contains("stock_sec_code_mul=") ||
+            url.contains("i_stock_sec=") ||
+            url.contains("stock_sec_code=")
+    }
+
     private fun extractCodeFromUrl(url: String): String? {
         return try {
-            val m = Regex("stock_sec_code=([0-9]{4})").find(url)
-            m?.groupValues?.getOrNull(1)
+            val pats = listOf(
+                Regex("stock_sec_code=([0-9]{4})"),
+                Regex("stock_sec_code_mul=([0-9]{4})"),
+                Regex("i_stock_sec=([0-9]{4})"),
+            )
+            for (p in pats) {
+                val m = p.find(url)
+                val g = m?.groupValues?.getOrNull(1)
+                if (!g.isNullOrBlank()) return g
+            }
+            null
         } catch (_: Throwable) {
             null
         }
@@ -1011,7 +1039,10 @@ private fun handleNonHttpScheme(url: String): Boolean {
         val u = url.lowercase(Locale.getDefault())
         if (u.contains("exchange_code=pts") || u.contains("getinfoofcurrentmarket")) return "pts"
         if (u.contains("cat2=ranking")) return "ranking"
-        if (u.contains("stock_sec_code=")) return "stock"
+        // SBI stock detail (no-login) uses stock_sec_code_mul / i_stock_sec, not always stock_sec_code=
+        if (u.contains("_actionid=stockdetail") || u.contains("wpletsir001idtl10") ||
+            u.contains("stock_sec_code_mul=") || u.contains("i_stock_sec=") || u.contains("stock_sec_code=")
+        ) return "stock"
         return "page"
     }
 
@@ -1078,6 +1109,7 @@ private fun handleNonHttpScheme(url: String): Boolean {
     }
 
     private fun showSbiMenuWithAuto() {
+        display.appendLog("UI: show SBI menu")
         val items = arrayOf(
             "AUTO開始 (このランキングから)",
             "値上がり率 (SBI)",

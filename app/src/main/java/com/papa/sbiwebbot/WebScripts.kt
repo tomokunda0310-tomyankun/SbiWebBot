@@ -1,5 +1,5 @@
 //app/src/main/java/com/papa/sbiwebbot/WebScripts.kt
-//ver 1.02-20
+//ver 1.02-23
 package com.papa.sbiwebbot
 
 object WebScripts {
@@ -303,23 +303,49 @@ object WebScripts {
                   try{
                     var m = /stock_sec_code=([0-9]{4})/.exec(h);
                     if(m && m[1]) return m[1];
+                    m = /stock_sec_code_mul=([0-9]{4})/.exec(h);
+                    if(m && m[1]) return m[1];
+                    m = /i_stock_sec=([0-9]{4})/.exec(h);
+                    if(m && m[1]) return m[1];
                   }catch(e){}
                   return '';
                 }
+                function absUrl(h){
+                  try{
+                    if(!h) return '';
+                    if(h.indexOf('http://')===0 || h.indexOf('https://')===0) return h;
+                    return new URL(h, location.href).toString();
+                  }catch(e){ return ''; }
+                }
+                function isAllowed(u){
+                  try{
+                    if(!u) return false;
+                    if(u.indexOf('login.sbisec.co.jp')>=0) return false;
+                    if(u.indexOf('www.sbisec.co.jp/ETGate/')<0) return false;
+                    if(u.indexOf('OutSide=on')<0) return false;
+                    // stock detail markers
+                    if(u.indexOf('_ActionID=stockDetail')<0 &&
+                       u.indexOf('WPLETsiR001Idtl10')<0 &&
+                       u.indexOf('stock_sec_code_mul=')<0 &&
+                       u.indexOf('i_stock_sec=')<0 &&
+                       u.indexOf('stock_sec_code=')<0) return false;
+                    return true;
+                  }catch(e){ return false; }
+                }
                 for(var i=0;i<a.length;i++){
-                  var h='';
-                  try{ h = a[i].href || a[i].getAttribute('href') || ''; }catch(e){ h=''; }
-                  if(!h) continue;
-                  if(h.indexOf('sbisec.co.jp')<0) continue;
-                  if(h.indexOf('stock_sec_code=')<0) continue;
-                  var code = pickCode(h);
+                  var raw='';
+                  try{ raw = a[i].getAttribute('href') || ''; }catch(e){ raw=''; }
+                  var u = absUrl(raw);
+                  if(!isAllowed(u)) continue;
+                  var code = pickCode(u);
                   if(!code) continue;
                   // de-dup by code
                   var dup=false;
                   for(var j=0;j<out.length;j++){ if(out[j].code===code){ dup=true; break; } }
                   if(dup) continue;
-                  out.push({url:h, code:code});
-                  if(out.length>=$lim) break;
+
+                  out.push({url:u, code:code});
+                  if(out.length>=lim) break;
                 }
                 return JSON.stringify(out);
               }catch(e){
